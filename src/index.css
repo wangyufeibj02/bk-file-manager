@@ -1,0 +1,564 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Apple-style Base Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* 响应式根字体大小 - 使页面随窗口缩放 */
+html {
+  /* 基准: 1920px 宽度时为 16px */
+  font-size: clamp(12px, calc(10px + 0.3125vw), 18px);
+}
+
+html, body, #root {
+  height: 100%;
+  font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: #000000;
+  color: #f5f5f7;
+  overflow: hidden;
+}
+
+/* 不同屏幕尺寸的适配 */
+@media (max-width: 1280px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 1024px) {
+  html {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 768px) {
+  html {
+    font-size: 12px;
+  }
+}
+
+/* Apple-style Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Selection */
+::selection {
+  background: rgba(0, 113, 227, 0.4);
+}
+
+/* Glass Morphism */
+.glass {
+  background: rgba(29, 29, 31, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-light {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Apple Button Styles */
+.btn-apple {
+  @apply px-6 py-3 rounded-full font-medium transition-all duration-200;
+  @apply bg-apple-accent text-white;
+  @apply hover:bg-apple-accentHover hover:scale-[1.02];
+  @apply active:scale-[0.98];
+}
+
+.btn-apple-secondary {
+  @apply px-6 py-3 rounded-full font-medium transition-all duration-200;
+  @apply bg-apple-glass text-apple-text border border-apple-glassBorder;
+  @apply hover:bg-apple-glassHover;
+  @apply active:scale-[0.98];
+}
+
+/* Card Styles */
+.card-apple {
+  @apply rounded-2xl overflow-hidden transition-all duration-300;
+  background: rgba(29, 29, 31, 0.6);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.card-apple:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Input Styles */
+.input-apple {
+  @apply w-full px-4 py-3 rounded-xl bg-apple-glass border border-apple-glassBorder;
+  @apply text-apple-text placeholder-apple-textTertiary;
+  @apply focus:outline-none focus:ring-2 focus:ring-apple-accent/50 focus:border-transparent;
+  @apply transition-all duration-200;
+}
+
+/* File drop zone */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(0, 113, 227, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(0, 113, 227, 0.6);
+  }
+}
+
+.drop-zone-active {
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+/* Transitions */
+.transition-apple {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Hover Effects */
+.hover-lift {
+  @apply transition-transform duration-300;
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+}
+
+/* Text Gradient */
+.text-gradient {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Shimmer Effect */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* Masonry grid */
+.masonry-grid {
+  display: flex;
+  gap: 16px;
+}
+
+.masonry-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Star Rating */
+.star-rating {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.star-rating .star {
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.star-rating .star:hover {
+  transform: scale(1.2);
+}
+
+/* Tag Pills */
+.tag-pill {
+  @apply px-3 py-1 rounded-full text-sm font-medium;
+  @apply bg-apple-glass border border-apple-glassBorder;
+  @apply transition-all duration-200;
+}
+
+.tag-pill:hover {
+  @apply bg-apple-glassHover;
+}
+
+/* Loading Skeleton */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.05) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+
+/* Focus Ring */
+.focus-ring {
+  @apply focus:outline-none focus:ring-2 focus:ring-apple-accent/50 focus:ring-offset-2 focus:ring-offset-transparent;
+}
+
+/* ==================== CYBERPUNK THEME ==================== */
+
+/* CSS Variables for Cyberpunk Colors */
+:root {
+  --cyber-primary: #00ffff;
+  --cyber-secondary: #ff00ff;
+  --cyber-bg: #0a0a0f;
+  --cyber-surface: rgba(20, 20, 30, 0.8);
+  --cyber-border: rgba(0, 255, 255, 0.2);
+  --cyber-text: #e0e0ff;
+  --cyber-muted: #6a6a8a;
+  --cyber-hover: rgba(0, 255, 255, 0.1);
+  --cyber-glow: 0 0 20px rgba(0, 255, 255, 0.4);
+}
+
+/* Cyberpunk Base */
+.cyber-bg {
+  background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0f0f1a 100%);
+}
+
+/* Cyberpunk Panel */
+.cyber-panel {
+  background: var(--cyber-surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--cyber-border);
+  border-radius: 12px;
+  box-shadow: var(--cyber-glow);
+}
+
+/* Cyberpunk Glow Effect */
+.cyber-glow {
+  box-shadow: 
+    0 0 5px var(--cyber-primary),
+    0 0 20px rgba(0, 255, 255, 0.3),
+    inset 0 0 10px rgba(0, 255, 255, 0.1);
+}
+
+.cyber-glow-secondary {
+  box-shadow: 
+    0 0 5px var(--cyber-secondary),
+    0 0 20px rgba(255, 0, 255, 0.3),
+    inset 0 0 10px rgba(255, 0, 255, 0.1);
+}
+
+/* Cyberpunk Button */
+.cyber-button {
+  position: relative;
+  background: linear-gradient(135deg, var(--cyber-primary), var(--cyber-secondary));
+  color: #000;
+  font-weight: 600;
+  border: none;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.cyber-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  transition: left 0.5s ease;
+}
+
+.cyber-button:hover::before {
+  left: 100%;
+}
+
+.cyber-button:hover {
+  box-shadow: 
+    0 0 20px var(--cyber-primary),
+    0 0 40px rgba(0, 255, 255, 0.4);
+  transform: translateY(-2px);
+}
+
+/* Glitch Text Effect */
+.glitch-text {
+  position: relative;
+  animation: glitch-skew 3s infinite linear alternate-reverse;
+}
+
+.glitch-text::before,
+.glitch-text::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.glitch-text::before {
+  left: 2px;
+  text-shadow: -2px 0 var(--cyber-secondary);
+  clip: rect(24px, 550px, 90px, 0);
+  animation: glitch-anim 3s infinite linear alternate-reverse;
+}
+
+.glitch-text::after {
+  left: -2px;
+  text-shadow: -2px 0 var(--cyber-primary);
+  clip: rect(85px, 550px, 140px, 0);
+  animation: glitch-anim2 3s infinite linear alternate-reverse;
+}
+
+@keyframes glitch-anim {
+  0% { clip: rect(51px, 9999px, 28px, 0); }
+  20% { clip: rect(70px, 9999px, 5px, 0); }
+  40% { clip: rect(26px, 9999px, 33px, 0); }
+  60% { clip: rect(99px, 9999px, 4px, 0); }
+  80% { clip: rect(25px, 9999px, 23px, 0); }
+  100% { clip: rect(90px, 9999px, 15px, 0); }
+}
+
+@keyframes glitch-anim2 {
+  0% { clip: rect(65px, 9999px, 100px, 0); }
+  20% { clip: rect(12px, 9999px, 59px, 0); }
+  40% { clip: rect(43px, 9999px, 13px, 0); }
+  60% { clip: rect(98px, 9999px, 21px, 0); }
+  80% { clip: rect(35px, 9999px, 17px, 0); }
+  100% { clip: rect(75px, 9999px, 63px, 0); }
+}
+
+@keyframes glitch-skew {
+  0% { transform: skew(0deg); }
+  20% { transform: skew(0deg); }
+  21% { transform: skew(1deg); }
+  22% { transform: skew(-1deg); }
+  23% { transform: skew(0deg); }
+  100% { transform: skew(0deg); }
+}
+
+/* Neon Border Animation */
+.neon-border {
+  position: relative;
+}
+
+.neon-border::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(45deg, var(--cyber-primary), var(--cyber-secondary), var(--cyber-primary));
+  background-size: 300% 300%;
+  border-radius: inherit;
+  z-index: -1;
+  animation: neon-gradient 3s ease infinite;
+  filter: blur(8px);
+  opacity: 0.7;
+}
+
+@keyframes neon-gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Scanline Effect */
+.scanlines::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.15) 2px,
+    rgba(0, 0, 0, 0.15) 4px
+  );
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* Cyberpunk Scrollbar */
+.cyber-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.cyber-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 255, 255, 0.05);
+}
+
+.cyber-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--cyber-primary), var(--cyber-secondary));
+  border-radius: 3px;
+}
+
+.cyber-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--cyber-primary);
+}
+
+/* Pulse Animation */
+@keyframes cyber-pulse {
+  0%, 100% {
+    box-shadow: 0 0 5px var(--cyber-primary), 0 0 10px rgba(0, 255, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px var(--cyber-primary), 0 0 40px rgba(0, 255, 255, 0.5);
+  }
+}
+
+.cyber-pulse {
+  animation: cyber-pulse 2s ease-in-out infinite;
+}
+
+/* Hex Grid Background Pattern */
+.hex-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='49' viewBox='0 0 28 49'%3E%3Cg fill-rule='evenodd'%3E%3Cg fill='%2300ffff' fill-opacity='0.03'%3E%3Cpath d='M13.99 9.25l13 7.5v15l-13 7.5L1 31.75v-15l12.99-7.5zM3 17.9v12.7l10.99 6.34 11-6.35V17.9l-11-6.34L3 17.9zM0 15l12.98-7.5V0h-2v6.35L0 12.69v2.3zm0 18.5L12.98 41v8h-2v-6.85L0 35.81v-2.3zM15 0v7.5L27.99 15H28v-2.31h-.01L17 6.35V0h-2zm0 49v-8l12.99-7.5H28v2.31h-.01L17 42.15V49h-2z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Data Stream Animation */
+@keyframes data-stream {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.data-stream {
+  position: absolute;
+  width: 1px;
+  height: 100%;
+  background: linear-gradient(180deg, transparent, var(--cyber-primary), transparent);
+  animation: data-stream 3s linear infinite;
+}
+
+/* Circuit Pattern */
+.circuit-pattern {
+  background-image: 
+    linear-gradient(90deg, rgba(0, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(rgba(0, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+/* Better Dropdown Animation */
+@keyframes dropdown-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-dropdown {
+  animation: dropdown-enter 0.15s ease-out;
+}
+
+/* Smooth hover transitions */
+.transition-fast {
+  transition: all 0.15s ease;
+}
+
+/* 自定义滚动条 - 带滑轨 */
+.custom-scrollbar::-webkit-scrollbar,
+.sidebar-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track,
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  margin: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb,
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--cyber-primary, #00ffff), var(--cyber-secondary, #ff00ff));
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--cyber-primary, #00ffff);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* 滚动条角落 */
+.custom-scrollbar::-webkit-scrollbar-corner,
+.sidebar-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 内容区滚动条 */
+.content-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.content-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 255, 255, 0.05);
+  border-left: 1px solid rgba(0, 255, 255, 0.1);
+}
+
+.content-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--cyber-primary, #00ffff), var(--cyber-secondary, #ff00ff));
+  border-radius: 0;
+  box-shadow: 0 0 10px var(--cyber-primary, #00ffff);
+}
+
+.content-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--cyber-primary, #00ffff);
+  box-shadow: 0 0 15px var(--cyber-primary, #00ffff);
+}
+
+/* Better focus states */
+input:focus, button:focus-visible {
+  outline: none;
+}
+
+/* Tooltip styles */
+[title] {
+  position: relative;
+}
+
+/* Improved button states */
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Smooth icon animations */
+.icon-spin {
+  transition: transform 0.2s ease;
+}
+
+.icon-spin:hover {
+  transform: rotate(90deg);
+}

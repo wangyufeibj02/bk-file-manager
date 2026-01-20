@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Folder {
+  id          String   @id @default(uuid())
+  name        String
+  parentId    String?
+  parent      Folder?  @relation("FolderToFolder", fields: [parentId], references: [id])
+  children    Folder[] @relation("FolderToFolder")
+  files       File[]
+  color       String?
+  icon        String?
+  isSmartFolder Boolean @default(false)
+  smartRules  String?  // JSON string for smart folder rules
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model File {
+  id           String   @id @default(uuid())
+  name         String
+  originalName String
+  path         String
+  thumbnailPath String?
+  mimeType     String
+  size         Int
+  width        Int?
+  height       Int?
+  duration     Float?   // For video/audio files
+  dominantColor String? // Hex color for color filtering
+  palette      String?  // JSON array of colors
+  rating       Int      @default(0) // 0-5 stars
+  annotation   String?  // User notes
+  folderId     String?
+  folder       Folder?  @relation(fields: [folderId], references: [id])
+  tags         FileTag[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  fileCreatedAt DateTime?
+  fileModifiedAt DateTime?
+  // 视频元数据
+  codec        String?  // 视频编码格式 (h264, hevc 等)
+  bitrate      Int?     // 比特率 (bps)
+  fps          Float?   // 帧率
+
+  @@index([folderId])
+  @@index([mimeType])
+  @@index([dominantColor])
+  @@index([rating])
+}
+
+model Tag {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  color     String?
+  parentId  String?
+  parent    Tag?      @relation("TagToTag", fields: [parentId], references: [id])
+  children  Tag[]     @relation("TagToTag")
+  files     FileTag[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model FileTag {
+  id     String @id @default(uuid())
+  fileId String
+  tagId  String
+  file   File   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([fileId, tagId])
+}
+
+// User authentication
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  password     String   // Hashed password
+  displayName  String?
+  role         String   @default("user") // admin, user
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  servers      UserServer[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// User's connected servers
+model UserServer {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  url       String
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, url])
+}
+
+// History records for file operations
+model History {
+  id        String   @id @default(uuid())
+  fileId    String
+  fileName  String   // Store file name in case file is deleted
+  filePath  String?  // Store path for reference
+  action    String   // view, edit, rename, move, tag, rate, delete
+  details   String?  // JSON string with additional details
+  userId    String?
+  createdAt DateTime @default(now())
+
+  @@index([fileId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// Trash bin for deleted files
+model Trash {
+  id            String   @id @default(uuid())
+  fileId        String
+  originalName  String
+  originalPath  String
+  thumbnailPath String?
+  mimeType      String
+  size          Int
+  folderId      String?
+  folderName    String?  // Store folder name for reference
+  deletedAt     DateTime @default(now())
+  deletedBy     String?  // User who deleted
+
+  @@index([deletedAt])
+}

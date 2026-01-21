@@ -38,12 +38,33 @@ npm run db:push
 
 ### 3. 启动开发服务器
 
+**方法一：使用 npm 命令（推荐）**
 ```bash
 npm run dev
 ```
 
-前端访问: http://localhost:3000
-后端 API: http://localhost:3001
+**方法二：双击运行（Windows）**
+- 双击 `快速启动.bat` 文件
+
+**方法三：使用 PowerShell 脚本**
+```powershell
+.\start.ps1
+```
+
+**方法四：分别启动前后端**
+```bash
+# 终端1：启动后端
+npm run dev:server
+
+# 终端2：启动前端
+npm run dev:client
+```
+
+前端访问: http://localhost:3000  
+后端 API: http://localhost:3001  
+默认账号: `admin` / `bkadmin123`
+
+> 📖 详细启动说明请查看 [本地启动指南.md](./本地启动指南.md)
 
 ## 🌐 部署到公网
 

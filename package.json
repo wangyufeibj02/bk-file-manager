@@ -1,7 +1,7 @@
 {
-  "name": "eagle-file-manager",
+  "name": "bk-file-manager",
   "version": "1.0.0",
-  "description": "Eagle-style file management system for internal servers",
+  "description": "百科交互文件管理系统 - 内部服务器文件归类和筛查",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",

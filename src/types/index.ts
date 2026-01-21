@@ -141,6 +141,7 @@ export interface HistoryRecord {
   action: HistoryAction;
   details: Record<string, any> | null;
   userId: string | null;
+  userName: string | null;
   createdAt: string;
 }
 
@@ -156,4 +157,7 @@ export interface TrashItem {
   folderName: string | null;
   deletedAt: string;
   deletedBy: string | null;
+  deletedByName: string | null;
+  fileExists: boolean;
+  canRestore: boolean;
 }

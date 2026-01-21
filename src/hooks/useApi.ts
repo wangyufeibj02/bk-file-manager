@@ -75,7 +75,7 @@ export function useApi() {
       // 处理 401 未授权
       if (response.status === 401) {
         clearToken();
-        window.location.reload();
+        // 不要自动刷新，让 App 组件处理登出状态
         throw new ApiError('登录已过期，请重新登录', 'UNAUTHORIZED', 401);
       }
       

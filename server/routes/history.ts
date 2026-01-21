@@ -56,10 +56,19 @@ router.get('/', optionalAuthMiddleware, async (req, res) => {
       prisma.history.count({ where }),
     ]);
 
-    // Parse details JSON
+    // 获取所有用户信息
+    const userIds = [...new Set(records.map(r => r.userId).filter(Boolean))] as string[];
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, username: true },
+    });
+    const userMap = new Map(users.map(u => [u.id, u.username]));
+
+    // Parse details JSON and add username
     const parsedRecords = records.map(r => ({
       ...r,
       details: r.details ? JSON.parse(r.details) : null,
+      userName: r.userId ? userMap.get(r.userId) || '未知用户' : null,
     }));
 
     res.json({
@@ -93,14 +102,22 @@ router.delete('/', authMiddleware, async (req, res) => {
   }
 });
 
-// Get trash items with file existence check
+// Get trash items with file existence check and user info
 router.get('/trash', optionalAuthMiddleware, async (req, res) => {
   try {
     const items = await prisma.trash.findMany({
       orderBy: { deletedAt: 'desc' },
     });
     
-    // 检查物理文件是否存在
+    // 获取所有删除者的用户信息
+    const userIds = [...new Set(items.map(item => item.deletedBy).filter(Boolean))] as string[];
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, username: true },
+    });
+    const userMap = new Map(users.map(u => [u.id, u.username]));
+    
+    // 检查物理文件是否存在并添加用户名
     const itemsWithStatus = items.map(item => {
       let fileExists = false;
       try {
@@ -116,6 +133,7 @@ router.get('/trash', optionalAuthMiddleware, async (req, res) => {
         ...item,
         fileExists,
         canRestore: fileExists,
+        deletedByName: item.deletedBy ? userMap.get(item.deletedBy) || '未知用户' : null,
       };
     });
     

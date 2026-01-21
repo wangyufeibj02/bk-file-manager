@@ -48,6 +48,9 @@ interface ToolbarProps {
   onLogout?: () => void;
   userSettings?: UserSettings;
   onOpenSettings?: () => void;
+  // 缩略图大小控制
+  thumbnailSize?: number;
+  onThumbnailSizeChange?: (size: number) => void;
 }
 
 // 更直观的颜色分类 - 按色相范围筛选
@@ -160,6 +163,8 @@ export function Toolbar({
   onLogout,
   userSettings,
   onOpenSettings,
+  thumbnailSize = 200,
+  onThumbnailSizeChange,
 }: ToolbarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
@@ -475,6 +480,37 @@ export function Toolbar({
             </button>
           ))}
         </div>
+
+        {/* 缩略图大小滑块 */}
+        {viewMode !== 'list' && onThumbnailSizeChange && (
+          <div 
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg group relative"
+            style={{ background: 'rgba(255,255,255,0.05)' }}
+            title={`缩略图: ${thumbnailSize}px`}
+          >
+            <FiGrid size={12} className="text-gray-500" />
+            <input
+              type="range"
+              min="100"
+              max="400"
+              step="20"
+              value={thumbnailSize}
+              onChange={(e) => onThumbnailSizeChange(parseInt(e.target.value))}
+              className="w-24 h-1.5 rounded-full appearance-none cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, ${primaryColor} 0%, ${primaryColor} ${((thumbnailSize - 100) / 300) * 100}%, rgba(255,255,255,0.2) ${((thumbnailSize - 100) / 300) * 100}%, rgba(255,255,255,0.2) 100%)`,
+              }}
+            />
+            <FiGrid size={16} style={{ color: primaryColor }} />
+            {/* 大小提示 */}
+            <div 
+              className="absolute -bottom-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] whitespace-nowrap px-2 py-0.5 rounded"
+              style={{ background: 'rgba(0,0,0,0.8)', color: primaryColor }}
+            >
+              {thumbnailSize}px
+            </div>
+          </div>
+        )}
 
         {/* 全选/清除选择 */}
         {totalCount > 0 && (

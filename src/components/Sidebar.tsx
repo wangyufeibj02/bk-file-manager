@@ -194,6 +194,7 @@ interface SidebarProps {
   onFolderSelect: (folderId: string | null) => void;
   onCreateFolder: (name: string, parentId?: string) => void;
   onDeleteFolder: (folderId: string) => void;
+  onRenameFolder?: (folderId: string, newName: string) => void;
   onCreateTag: (name: string, color?: string) => void;
   onDeleteTag?: (tagId: string) => void;
   onFilterByTag: (tagIds: string[]) => void;
@@ -213,6 +214,9 @@ interface SidebarProps {
   onDeleteFromTrash?: (id: string) => void;
   onEmptyTrash?: () => void;
   onClearHistory?: () => void;
+  // 视图切换
+  currentView?: 'files' | 'trash' | 'history';
+  onViewChange?: (view: 'files' | 'trash' | 'history') => void;
 }
 
 export const Sidebar = memo(function Sidebar({
@@ -222,6 +226,7 @@ export const Sidebar = memo(function Sidebar({
   onFolderSelect,
   onCreateFolder,
   onDeleteFolder,
+  onRenameFolder,
   onCreateTag,
   onDeleteTag,
   onFilterByTag,
@@ -240,6 +245,8 @@ export const Sidebar = memo(function Sidebar({
   onDeleteFromTrash,
   onEmptyTrash,
   onClearHistory,
+  currentView = 'files',
+  onViewChange,
 }: SidebarProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['folders', 'types']));
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -249,6 +256,8 @@ export const Sidebar = memo(function Sidebar({
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newTagName, setNewTagName] = useState('');
   const [showNewTag, setShowNewTag] = useState(false);
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [editingFolderName, setEditingFolderName] = useState('');
 
   // 切换类型分类展开
   const toggleCategory = (key: string) => {
@@ -332,10 +341,31 @@ export const Sidebar = memo(function Sidebar({
     }
   };
 
+  const handleStartEditFolder = (e: React.MouseEvent, folder: Folder) => {
+    e.stopPropagation();
+    setEditingFolderId(folder.id);
+    setEditingFolderName(folder.name);
+  };
+
+  const handleSaveFolder = (folderId: string) => {
+    const trimmedName = editingFolderName.trim();
+    if (trimmedName && onRenameFolder) {
+      onRenameFolder(folderId, trimmedName);
+    }
+    setEditingFolderId(null);
+    setEditingFolderName('');
+  };
+
+  const handleCancelEditFolder = () => {
+    setEditingFolderId(null);
+    setEditingFolderName('');
+  };
+
   const renderFolder = (folder: Folder, depth = 0) => {
     const hasChildren = folder.children && folder.children.length > 0;
     const isExpanded = expandedFolders.has(folder.id);
     const isSelected = selectedFolder === folder.id;
+    const isEditing = editingFolderId === folder.id;
 
     return (
       <div key={folder.id}>
@@ -345,7 +375,7 @@ export const Sidebar = memo(function Sidebar({
             marginLeft: `${4 + depth * 12}px`,
             background: isSelected ? `${primaryColor}15` : 'transparent',
           }}
-          onClick={() => onFolderSelect(folder.id)}
+          onClick={() => !isEditing && onFolderSelect(folder.id)}
         >
           {hasChildren ? (
             <button
@@ -361,24 +391,56 @@ export const Sidebar = memo(function Sidebar({
             <span className="w-4" />
           )}
           <FiFolder size={14} style={{ color: isSelected ? primaryColor : (folder.color || '#666') }} />
-          <span 
-            className="flex-1 truncate text-sm"
-            style={{ color: isSelected ? primaryColor : '#ccc' }}
-          >
-            {folder.name}
-          </span>
-          {folder._count && folder._count.files > 0 && (
+          
+          {isEditing ? (
+            <input
+              type="text"
+              value={editingFolderName}
+              onChange={(e) => setEditingFolderName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveFolder(folder.id);
+                if (e.key === 'Escape') handleCancelEditFolder();
+              }}
+              onBlur={() => handleSaveFolder(folder.id)}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1 px-1 py-0.5 bg-black/40 border border-white/20 rounded text-sm text-white focus:outline-none focus:border-cyan-500"
+              autoFocus
+            />
+          ) : (
+            <span 
+              className="flex-1 truncate text-sm"
+              style={{ color: isSelected ? primaryColor : '#ccc' }}
+              onDoubleClick={(e) => handleStartEditFolder(e, folder)}
+            >
+              {folder.name}
+            </span>
+          )}
+          
+          {!isEditing && folder._count && folder._count.files > 0 && (
             <span className="text-xs text-gray-500">{folder._count.files}</span>
           )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirm(`删除 "${folder.name}"？`)) onDeleteFolder(folder.id);
-            }}
-            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 transition-all"
-          >
-            <FiTrash2 size={11} className="text-red-400" />
-          </button>
+          
+          {!isEditing && (
+            <>
+              <button
+                onClick={(e) => handleStartEditFolder(e, folder)}
+                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 transition-all"
+                title="重命名"
+              >
+                <FiEdit3 size={11} style={{ color: primaryColor }} />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm(`删除 "${folder.name}"？`)) onDeleteFolder(folder.id);
+                }}
+                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 transition-all"
+                title="删除"
+              >
+                <FiTrash2 size={11} className="text-red-400" />
+              </button>
+            </>
+          )}
         </div>
         {hasChildren && isExpanded && folder.children!.map(child => renderFolder(child, depth + 1))}
       </div>
@@ -754,137 +816,75 @@ export const Sidebar = memo(function Sidebar({
         {/* 分隔线 */}
         <div className="my-2 mx-3 border-t border-white/10" />
 
-        {/* 历史记录 */}
-        <Section 
-          id="history" 
-          title="历史记录" 
-          icon={FiClock}
-          action={
-            historyRecords.length > 0 && onClearHistory ? (
-              <button
-                onClick={(e) => { e.stopPropagation(); onClearHistory(); }}
-                className="p-1 rounded hover:bg-white/10 text-gray-500 hover:text-red-400"
-                title="清空历史"
-              >
-                <FiTrash2 size={12} />
-              </button>
-            ) : undefined
-          }
-        >
-          {historyRecords.length === 0 ? (
-            <div className="px-3 py-4 text-xs text-gray-500 text-center">
-              <FiClock size={24} className="mx-auto mb-2 opacity-50" />
-              <div>浏览和编辑记录将显示在这里</div>
-            </div>
-          ) : (
-            <div className="px-2 space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
-              {historyRecords.slice(0, 20).map(record => {
-                const actionInfo = getActionInfo(record.action);
-                const ActionIcon = actionInfo.icon;
-                return (
-                  <div
-                    key={record.id}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/5 transition-all group"
-                  >
-                    <ActionIcon 
-                      size={12} 
-                      style={{ color: actionInfo.color, flexShrink: 0 }} 
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-gray-300 truncate">
-                        {record.fileName}
-                      </div>
-                      <div className="text-[10px] text-gray-500 flex items-center gap-1">
-                        <span>{actionInfo.label}</span>
-                        {record.details && (
-                          <span className="truncate">
-                            {formatHistoryDetails(record.action, record.details)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <span className="text-[10px] text-gray-600 whitespace-nowrap">
-                      {formatTime(record.createdAt)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Section>
-
-        {/* 回收站 */}
-        <Section 
-          id="trash" 
-          title={`回收站 ${trashItems.length > 0 ? `(${trashItems.length})` : ''}`}
-          icon={FiRotateCcw}
-          action={
-            trashItems.length > 0 && onEmptyTrash ? (
-              <button
-                onClick={(e) => { 
-                  e.stopPropagation(); 
-                  if (confirm('确定要清空回收站吗？此操作不可恢复！')) {
-                    onEmptyTrash();
-                  }
+        {/* 历史记录 - 点击在主内容区显示 */}
+        <div className="border-b border-white/5">
+          <button
+            onClick={() => onViewChange?.('history')}
+            className={`w-full flex items-center gap-2 px-3 py-2.5 transition-all ${
+              currentView === 'history' ? '' : 'hover:bg-white/5'
+            }`}
+            style={{
+              background: currentView === 'history' ? `${primaryColor}15` : 'transparent',
+            }}
+          >
+            <FiClock 
+              size={14} 
+              style={{ color: currentView === 'history' ? primaryColor : '#666' }} 
+            />
+            <span 
+              className="flex-1 text-left text-sm"
+              style={{ color: currentView === 'history' ? primaryColor : '#ccc' }}
+            >
+              历史记录
+            </span>
+            {historyRecords.length > 0 && (
+              <span 
+                className="px-1.5 py-0.5 text-xs rounded-full"
+                style={{ 
+                  background: currentView === 'history' ? `${primaryColor}30` : 'rgba(255,255,255,0.1)',
+                  color: currentView === 'history' ? primaryColor : '#888'
                 }}
-                className="p-1 rounded hover:bg-white/10 text-gray-500 hover:text-red-400"
-                title="清空回收站"
               >
-                <FiTrash2 size={12} />
-              </button>
-            ) : undefined
-          }
-        >
-          {trashItems.length === 0 ? (
-            <div className="px-3 py-4 text-xs text-gray-500 text-center">
-              <FiTrash2 size={24} className="mx-auto mb-2 opacity-50" />
-              <div>已删除的文件将保留在这里</div>
-            </div>
-          ) : (
-            <div className="px-2 space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
-              {trashItems.map(item => (
-                <div
-                  key={item.id}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/5 transition-all group"
-                >
-                  <FiFile size={12} className="text-gray-500 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs text-gray-300 truncate">
-                      {item.originalName}
-                    </div>
-                    <div className="text-[10px] text-gray-500">
-                      {item.folderName || '根目录'} · {formatSize(item.size)}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {onRestoreFromTrash && (
-                      <button
-                        onClick={() => onRestoreFromTrash(item.id)}
-                        className="p-1 rounded hover:bg-green-500/20"
-                        title="恢复"
-                      >
-                        <FiRefreshCw size={11} className="text-green-400" />
-                      </button>
-                    )}
-                    {onDeleteFromTrash && (
-                      <button
-                        onClick={() => {
-                          if (confirm('确定要永久删除吗？')) {
-                            onDeleteFromTrash(item.id);
-                          }
-                        }}
-                        className="p-1 rounded hover:bg-red-500/20"
-                        title="永久删除"
-                      >
-                        <FiTrash2 size={11} className="text-red-400" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Section>
+                {historyRecords.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* 回收站 - 点击在主内容区显示 */}
+        <div className="border-b border-white/5">
+          <button
+            onClick={() => onViewChange?.('trash')}
+            className={`w-full flex items-center gap-2 px-3 py-2.5 transition-all ${
+              currentView === 'trash' ? '' : 'hover:bg-white/5'
+            }`}
+            style={{
+              background: currentView === 'trash' ? `${primaryColor}15` : 'transparent',
+            }}
+          >
+            <FiTrash2 
+              size={14} 
+              style={{ color: currentView === 'trash' ? primaryColor : '#666' }} 
+            />
+            <span 
+              className="flex-1 text-left text-sm"
+              style={{ color: currentView === 'trash' ? primaryColor : '#ccc' }}
+            >
+              回收站
+            </span>
+            {trashItems.length > 0 && (
+              <span 
+                className="px-1.5 py-0.5 text-xs rounded-full"
+                style={{ 
+                  background: currentView === 'trash' ? `${primaryColor}30` : 'rgba(255,255,255,0.1)',
+                  color: currentView === 'trash' ? primaryColor : '#888'
+                }}
+              >
+                {trashItems.length}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* 底部 */}

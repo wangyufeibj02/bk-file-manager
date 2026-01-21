@@ -5,6 +5,30 @@ import { validate, createFolderSchema } from '../lib/validation.js';
 
 const router = Router();
 
+// 添加文件夹操作历史记录
+async function addFolderHistory(
+  folderId: string,
+  folderName: string,
+  action: string,
+  details?: Record<string, any>,
+  userId?: string
+) {
+  try {
+    await prisma.history.create({
+      data: {
+        fileId: folderId, // 使用 folderId 作为标识
+        fileName: `📁 ${folderName}`, // 添加文件夹图标前缀
+        filePath: null,
+        action,
+        details: details ? JSON.stringify({ ...details, isFolder: true }) : JSON.stringify({ isFolder: true }),
+        userId,
+      },
+    });
+  } catch (err) {
+    console.error('Failed to add folder history:', err);
+  }
+}
+
 // 读取可选认证，写入需要认证
 router.use(optionalAuthMiddleware);
 
@@ -95,9 +119,10 @@ router.post('/', authMiddleware, validate(createFolderSchema), async (req: AuthR
     const { name, parentId, color, icon } = req.body;
     
     // 验证父文件夹是否存在
+    let parentFolder = null;
     if (parentId) {
-      const parent = await prisma.folder.findUnique({ where: { id: parentId } });
-      if (!parent) {
+      parentFolder = await prisma.folder.findUnique({ where: { id: parentId } });
+      if (!parentFolder) {
         return res.status(400).json({ error: '父文件夹不存在' });
       }
     }
@@ -110,6 +135,13 @@ router.post('/', authMiddleware, validate(createFolderSchema), async (req: AuthR
         icon,
       },
     });
+
+    // 记录创建历史
+    await addFolderHistory(folder.id, folder.name, 'edit', {
+      type: 'create',
+      parent: parentFolder?.name || '根目录',
+    }, req.user?.userId);
+
     res.status(201).json(folder);
   } catch (error) {
     console.error('创建文件夹错误:', error);
@@ -118,7 +150,7 @@ router.post('/', authMiddleware, validate(createFolderSchema), async (req: AuthR
 });
 
 // Update folder
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const folderId = req.params.id;
     if (!/^[a-f0-9-]+$/i.test(folderId)) {
@@ -132,6 +164,16 @@ router.patch('/:id', async (req, res) => {
       return res.status(400).json({ error: '不能将文件夹移动到自身' });
     }
 
+    // 获取原文件夹信息
+    const oldFolder = await prisma.folder.findUnique({
+      where: { id: folderId },
+      include: { parent: true },
+    });
+
+    if (!oldFolder) {
+      return res.status(404).json({ error: '文件夹不存在' });
+    }
+
     const folder = await prisma.folder.update({
       where: { id: folderId },
       data: {
@@ -140,7 +182,38 @@ router.patch('/:id', async (req, res) => {
         color,
         icon,
       },
+      include: { parent: true },
     });
+
+    // 记录历史
+    const userId = req.user?.userId;
+    
+    // 重命名
+    if (name && name !== oldFolder.name) {
+      await addFolderHistory(folderId, folder.name, 'rename', {
+        from: oldFolder.name,
+        to: name,
+      }, userId);
+    }
+    
+    // 移动
+    if (parentId !== undefined && parentId !== oldFolder.parentId) {
+      const newParent = folder.parent;
+      await addFolderHistory(folderId, folder.name, 'move', {
+        fromFolder: oldFolder.parent?.name || '根目录',
+        toFolder: newParent?.name || '根目录',
+      }, userId);
+    }
+    
+    // 编辑（颜色或图标变更）
+    if ((color && color !== oldFolder.color) || (icon && icon !== oldFolder.icon)) {
+      await addFolderHistory(folderId, folder.name, 'edit', {
+        type: 'appearance',
+        color: color !== oldFolder.color ? { from: oldFolder.color, to: color } : undefined,
+        icon: icon !== oldFolder.icon ? { from: oldFolder.icon, to: icon } : undefined,
+      }, userId);
+    }
+
     res.json(folder);
   } catch (error) {
     console.error('更新文件夹错误:', error);
@@ -149,7 +222,7 @@ router.patch('/:id', async (req, res) => {
 });
 
 // Delete folder
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const folderId = req.params.id;
     if (!/^[a-f0-9-]+$/i.test(folderId)) {
@@ -161,6 +234,7 @@ router.delete('/:id', async (req, res) => {
       where: { id: folderId },
       include: {
         _count: { select: { files: true, children: true } },
+        parent: true,
       },
     });
 
@@ -174,6 +248,11 @@ router.delete('/:id', async (req, res) => {
         code: 'FOLDER_NOT_EMPTY' 
       });
     }
+
+    // 记录删除历史
+    await addFolderHistory(folderId, folder.name, 'delete', {
+      parent: folder.parent?.name || '根目录',
+    }, req.user?.userId);
 
     await prisma.folder.delete({
       where: { id: folderId },

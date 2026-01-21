@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { FileGrid } from './components/FileGrid';
+import { TrashGrid } from './components/TrashGrid';
+import { HistoryGrid } from './components/HistoryGrid';
 import { FilePreview } from './components/FilePreview';
 import { UploadZone } from './components/UploadZone';
 import { ScanDialog } from './components/ScanDialog';
@@ -89,17 +91,40 @@ function App() {
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const [filters, setFilters] = useState<FileFilters>({});
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [thumbnailSize, setThumbnailSize] = useState<number>(() => {
+    const saved = localStorage.getItem('bkThumbnailSize');
+    return saved ? parseInt(saved) : 200;
+  });
   const [isUploading, setIsUploading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showScanDialog, setShowScanDialog] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pagination, setPagination] = useState<Pagination | null>(null);
-  const PAGE_SIZE = 50;
+  const [loadingMore, setLoadingMore] = useState(false); // 是否正在加载更多
+  const [allFiles, setAllFiles] = useState<FileItem[]>([]); // 所有已加载的文件（无限滚动模式）
+  
+  // 根据缩略图大小动态计算每页数量
+  // 假设屏幕宽度约 1600px 可用，高度约 800px 可用
+  // 列数 = floor(1600 / thumbnailSize)
+  // 行数 = floor(800 / (thumbnailSize * 1.3)) // 1.3 是卡片高度比例
+  // 每页数量 = 列数 * 行数 * 1.5 (多加载一些以确保填满)
+  const calculatePageSize = (size: number) => {
+    const cols = Math.floor(1600 / size);
+    const rows = Math.floor(800 / (size * 1.3));
+    const calculated = Math.max(12, Math.floor(cols * rows * 1.5));
+    // 限制在合理范围内
+    return Math.min(Math.max(calculated, 12), 200);
+  };
+  
+  const pageSize = calculatePageSize(thumbnailSize);
   
   // History & Trash
   const [historyRecords, setHistoryRecords] = useState<HistoryRecord[]>([]);
   const [trashItems, setTrashItems] = useState<TrashItem[]>([]);
+  
+  // 当前视图 ('files' | 'trash' | 'history')
+  const [currentView, setCurrentView] = useState<'files' | 'trash' | 'history'>('files');
   
   // 悬浮文件引用（用于快捷键）
   const hoveredFileRef = useRef<FileItem | null>(null);
@@ -122,7 +147,7 @@ function App() {
             setPreviewFile(hoveredFileRef.current);
             setSelectedFiles([hoveredFileRef.current.id]);
           } else if (selectedFiles.length > 0) {
-            const fileToPreview = files.find(f => f.id === selectedFiles[0]);
+            const fileToPreview = allFiles.find(f => f.id === selectedFiles[0]);
             if (fileToPreview) {
               setPreviewFile(fileToPreview);
             }
@@ -146,10 +171,10 @@ function App() {
       key: 'ArrowLeft',
       handler: () => {
         if (previewFile) {
-          const currentIndex = files.findIndex(f => f.id === previewFile.id);
+          const currentIndex = allFiles.findIndex(f => f.id === previewFile.id);
           if (currentIndex > 0) {
-            setPreviewFile(files[currentIndex - 1]);
-            setSelectedFiles([files[currentIndex - 1].id]);
+            setPreviewFile(allFiles[currentIndex - 1]);
+            setSelectedFiles([allFiles[currentIndex - 1].id]);
           }
         }
       },
@@ -161,10 +186,10 @@ function App() {
       key: 'ArrowRight',
       handler: () => {
         if (previewFile) {
-          const currentIndex = files.findIndex(f => f.id === previewFile.id);
-          if (currentIndex < files.length - 1) {
-            setPreviewFile(files[currentIndex + 1]);
-            setSelectedFiles([files[currentIndex + 1].id]);
+          const currentIndex = allFiles.findIndex(f => f.id === previewFile.id);
+          if (currentIndex < allFiles.length - 1) {
+            setPreviewFile(allFiles[currentIndex + 1]);
+            setSelectedFiles([allFiles[currentIndex + 1].id]);
           }
         }
       },
@@ -190,7 +215,7 @@ function App() {
       enabled: selectedFiles.length > 0 && !previewFile,
       description: '删除选中文件',
     },
-  ], [previewFile, files, selectedFiles, hoveredFileRef]);
+  ], [previewFile, allFiles, selectedFiles, hoveredFileRef]);
 
   // Apply CSS variables for theme colors
   useEffect(() => {
@@ -272,7 +297,7 @@ function App() {
     }
   };
 
-  const loadFiles = async (page: number = currentPage) => {
+  const loadFiles = async (page: number = 1, resetAll: boolean = true) => {
     try {
       const currentFilters: FileFilters = {
         ...filters,
@@ -280,16 +305,61 @@ function App() {
         search: searchQuery || undefined,
         format: selectedFormat || undefined,
       };
-      const data = await api.getFiles(currentFilters, page, PAGE_SIZE);
-      setFiles(data.files);
+      const data = await api.getFiles(currentFilters, page, pageSize);
+      
+      if (resetAll) {
+        // 重置时，只设置第一页的数据
+        setAllFiles(data.files);
+        setFiles(data.files);
+        setCurrentPage(1);
+      } else {
+        // 追加模式
+        setFiles(data.files);
+      }
       setPagination(data.pagination);
     } catch (err) {
       console.error('Failed to load files:', err);
     }
   };
+  
+  // 加载更多（无限滚动）
+  const handleLoadMore = async () => {
+    if (loadingMore || !pagination || currentPage >= pagination.totalPages) {
+      return;
+    }
+    
+    setLoadingMore(true);
+    try {
+      const nextPage = currentPage + 1;
+      const currentFilters: FileFilters = {
+        ...filters,
+        folderId: selectedFolder || undefined,
+        search: searchQuery || undefined,
+        format: selectedFormat || undefined,
+      };
+      const data = await api.getFiles(currentFilters, nextPage, pageSize);
+      
+      // 追加新数据到已有数据
+      setAllFiles(prev => [...prev, ...data.files]);
+      setCurrentPage(nextPage);
+      setPagination(data.pagination);
+    } catch (err) {
+      console.error('Failed to load more files:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   // 是否已完成初始加载
   const [initialLoaded, setInitialLoaded] = useState(false);
+
+  // 监听 API 错误，处理登出
+  useEffect(() => {
+    if (api.error && api.error.includes('登录已过期')) {
+      setAuth({ isLoggedIn: false, user: null, servers: [] });
+      setInitialLoaded(false);
+    }
+  }, [api.error]);
 
   // Load initial data (only when logged in)
   useEffect(() => {
@@ -307,7 +377,7 @@ function App() {
   // 使用 ref 跟踪上一次的过滤条件，避免不必要的页码重置
   const prevFiltersRef = useRef<string>('');
   
-  // Reload files when filters change (reset to page 1) - 仅在初始加载后
+  // Reload files when filters or pageSize change (reset to page 1) - 仅在初始加载后
   useEffect(() => {
     if (auth.isLoggedIn && initialLoaded) {
       // 序列化当前过滤条件
@@ -315,37 +385,36 @@ function App() {
         ...filters,
         folderId: selectedFolder,
         format: selectedFormat,
+        pageSize, // 将 pageSize 也加入比较
       });
       
-      // 只有当过滤条件真正变化时才重置页码
-      const filtersChanged = currentFiltersStr !== prevFiltersRef.current;
+      // 检查条件是否变化
+      const conditionsChanged = currentFiltersStr !== prevFiltersRef.current;
       prevFiltersRef.current = currentFiltersStr;
       
-      if (filtersChanged) {
-        setCurrentPage(1);
+      // 条件变化时重置并加载第一页
+      if (conditionsChanged) {
+        const doLoadFiles = async () => {
+          try {
+            const currentFilters: FileFilters = {
+              ...filters,
+              folderId: selectedFolder || undefined,
+              search: searchQuery || undefined,
+              format: selectedFormat || undefined,
+            };
+            const data = await api.getFiles(currentFilters, 1, pageSize);
+            setAllFiles(data.files);
+            setCurrentPage(1);
+            setPagination(data.pagination);
+          } catch (err) {
+            console.error('Failed to load files:', err);
+          }
+        };
+        doLoadFiles();
       }
-      
-      // 直接在 effect 内构建过滤条件，避免闭包问题
-      const doLoadFiles = async () => {
-        try {
-          const currentFilters: FileFilters = {
-            ...filters,
-            folderId: selectedFolder || undefined,
-            search: searchQuery || undefined,
-            format: selectedFormat || undefined,
-          };
-          const pageToLoad = filtersChanged ? 1 : currentPage;
-          const data = await api.getFiles(currentFilters, pageToLoad, PAGE_SIZE);
-          setFiles(data.files);
-          setPagination(data.pagination);
-        } catch (err) {
-          console.error('Failed to load files:', err);
-        }
-      };
-      doLoadFiles();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, selectedFolder, selectedFormat]);
+  }, [filters, selectedFolder, selectedFormat, pageSize]);
 
   // Show login page if not authenticated
   if (!auth.isLoggedIn) {
@@ -427,15 +496,29 @@ function App() {
     }
   };
 
-  const handlePageChange = (page: number) => {
+  const handlePageChange = async (page: number) => {
+    // 直接加载指定页面的数据，不依赖 useEffect
     setCurrentPage(page);
-    loadFiles(page);
+    try {
+      const currentFilters: FileFilters = {
+        ...filters,
+        folderId: selectedFolder || undefined,
+        search: searchQuery || undefined,
+        format: selectedFormat || undefined,
+      };
+      const data = await api.getFiles(currentFilters, page, pageSize);
+      setFiles(data.files);
+      setPagination(data.pagination);
+    } catch (err) {
+      console.error('Failed to load files:', err);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleFolderSelect = (folderId: string | null) => {
     setSelectedFolder(folderId);
     setSelectedFiles([]);
+    setCurrentView('files'); // 切换回文件视图
   };
 
   const handleFileSelect = (fileId: string, multi: boolean) => {
@@ -456,12 +539,12 @@ function App() {
     }
   };
 
-  // 全选当前页面的文件
+  // 全选当前已加载的文件
   const handleSelectAll = () => {
-    if (selectedFiles.length === files.length) {
+    if (selectedFiles.length === allFiles.length) {
       setSelectedFiles([]); // 如果已全选则取消全选
     } else {
-      setSelectedFiles(files.map(f => f.id));
+      setSelectedFiles(allFiles.map(f => f.id));
     }
   };
 
@@ -534,6 +617,15 @@ function App() {
       } catch (err) {
         console.error('Failed to delete folder:', err);
       }
+    }
+  };
+
+  const handleRenameFolder = async (folderId: string, newName: string) => {
+    try {
+      await api.updateFolder(folderId, { name: newName });
+      await loadFolders();
+    } catch (err) {
+      console.error('Failed to rename folder:', err);
     }
   };
 
@@ -683,6 +775,7 @@ function App() {
           onFolderSelect={handleFolderSelect}
           onCreateFolder={handleCreateFolder}
           onDeleteFolder={handleDeleteFolder}
+          onRenameFolder={handleRenameFolder}
           onCreateTag={handleCreateTag}
           onDeleteTag={handleDeleteTag}
           onFilterByTag={handleFilterByTag}
@@ -701,6 +794,15 @@ function App() {
           onDeleteFromTrash={handleDeleteFromTrash}
           onEmptyTrash={handleEmptyTrash}
           onClearHistory={handleClearHistory}
+          currentView={currentView}
+          onViewChange={(view) => {
+            setCurrentView(view);
+            if (view === 'trash') {
+              loadTrash();
+            } else if (view === 'history') {
+              loadHistory();
+            }
+          }}
         />
       </div>
 
@@ -715,7 +817,7 @@ function App() {
           onFilterByType={handleFilterByType}
           onSortChange={handleSortChange}
           selectedCount={selectedFiles.length}
-          totalCount={files.length}
+          totalCount={pagination?.total || allFiles.length}
           onSelectAll={handleSelectAll}
           onDeleteSelected={async () => {
             const confirmed = await confirm({
@@ -738,41 +840,77 @@ function App() {
           onLogout={handleLogout}
           userSettings={userSettings}
           onOpenSettings={() => setShowUserSettings(true)}
+          thumbnailSize={thumbnailSize}
+          onThumbnailSizeChange={(size) => {
+            setThumbnailSize(size);
+            localStorage.setItem('bkThumbnailSize', size.toString());
+          }}
         />
 
-        {/* File Grid with Drop Zone */}
-        <UploadZone onUpload={handleUpload} isUploading={isUploading}>
-          <FileGrid
-            files={files}
-            viewMode={viewMode}
-            selectedFiles={selectedFiles}
-            onFileSelect={handleFileSelect}
-            onBatchSelect={handleBatchSelect}
-            onFileDoubleClick={handleFileDoubleClick}
-            onRateFile={handleRateFile}
-            onHoverFile={handleHoverFile}
-            loading={api.loading}
+        {/* 主内容区 - 根据视图显示不同内容 */}
+        {currentView === 'files' && (
+          <UploadZone onUpload={handleUpload} isUploading={isUploading}>
+            <FileGrid
+              files={allFiles}
+              viewMode={viewMode}
+              selectedFiles={selectedFiles}
+              onFileSelect={handleFileSelect}
+              onBatchSelect={handleBatchSelect}
+              onFileDoubleClick={handleFileDoubleClick}
+              onRateFile={handleRateFile}
+              onHoverFile={handleHoverFile}
+              loading={api.loading}
+              loadingMore={loadingMore}
+              userSettings={userSettings}
+              pagination={pagination}
+              currentPage={currentPage}
+              onLoadMore={handleLoadMore}
+              searchQuery={searchQuery}
+              thumbnailSize={thumbnailSize}
+            />
+          </UploadZone>
+        )}
+        
+        {currentView === 'trash' && (
+          <TrashGrid
+            items={trashItems}
             userSettings={userSettings}
-            pagination={pagination}
-            currentPage={currentPage}
-            onPageChange={handlePageChange}
-            searchQuery={searchQuery}
+            onRestoreItem={handleRestoreFromTrash}
+            onDeleteItem={handleDeleteFromTrash}
+            onRestoreAll={async () => {
+              for (const item of trashItems) {
+                if (item.canRestore) {
+                  await handleRestoreFromTrash(item.id);
+                }
+              }
+            }}
+            onEmptyTrash={handleEmptyTrash}
+            loading={api.loading}
           />
-        </UploadZone>
+        )}
+        
+        {currentView === 'history' && (
+          <HistoryGrid
+            records={historyRecords}
+            userSettings={userSettings}
+            onClearHistory={handleClearHistory}
+            loading={api.loading}
+          />
+        )}
       </div>
 
       {/* File Preview Modal */}
       {previewFile && (
         <FilePreview
           file={previewFile}
-          files={files}
+          files={allFiles}
           onClose={() => setPreviewFile(null)}
           onNavigate={(file) => setPreviewFile(file)}
           onRateFile={handleRateFile}
           onRenameFile={handleRenameFile}
           tags={tags}
-          onAddTag={(tagId) => api.addTagToFile(previewFile.id, tagId).then(loadFiles)}
-          onRemoveTag={(tagId) => api.removeTagFromFile(previewFile.id, tagId).then(loadFiles)}
+          onAddTag={(tagId) => api.addTagToFile(previewFile.id, tagId).then(() => loadFiles(1, true))}
+          onRemoveTag={(tagId) => api.removeTagFromFile(previewFile.id, tagId).then(() => loadFiles(1, true))}
         />
       )}
 

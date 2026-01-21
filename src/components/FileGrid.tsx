@@ -18,11 +18,13 @@ interface FileGridProps {
   onRateFile: (fileId: string, rating: number) => void;
   onHoverFile?: (file: FileItem | null) => void;
   loading: boolean;
+  loadingMore?: boolean; // 是否正在加载更多
   userSettings?: UserSettings;
   pagination?: Pagination | null;
   currentPage?: number;
-  onPageChange?: (page: number) => void;
+  onLoadMore?: () => void; // 加载更多回调（无限滚动）
   searchQuery?: string; // 用于高亮搜索结果
+  thumbnailSize?: number; // 缩略图大小
 }
 
 // 框选状态
@@ -144,6 +146,7 @@ function FileCard({
   searchQuery,
   registerRef,
   isDragging,
+  thumbnailSize = 200,
 }: { 
   file: FileItem;
   isSelected: boolean;
@@ -155,6 +158,7 @@ function FileCard({
   searchQuery?: string;
   registerRef?: (el: HTMLElement | null) => void;
   isDragging?: boolean;
+  thumbnailSize?: number;
 }) {
   const isImage = file.mimeType.startsWith('image/');
   const isVideo = file.mimeType.startsWith('video/');
@@ -714,6 +718,74 @@ function PaginationBar({
   );
 }
 
+// 无限滚动加载指示器
+function InfiniteScrollIndicator({ 
+  loadedCount, 
+  totalCount, 
+  loadingMore,
+  hasMore,
+  primaryColor,
+}: { 
+  loadedCount: number;
+  totalCount: number;
+  loadingMore: boolean;
+  hasMore: boolean;
+  primaryColor: string;
+}) {
+  const progress = totalCount > 0 ? (loadedCount / totalCount) * 100 : 0;
+  
+  return (
+    <div 
+      className="flex flex-col items-center gap-3 py-4 px-4 border-t"
+      style={{ 
+        borderColor: `${primaryColor}20`,
+        background: 'rgba(0,0,0,0.3)',
+      }}
+    >
+      {/* 进度信息 */}
+      <div className="flex items-center gap-4 w-full max-w-md">
+        <div className="flex-1 h-2 rounded-full bg-black/40 overflow-hidden">
+          <div 
+            className="h-full rounded-full transition-all duration-300"
+            style={{ 
+              width: `${progress}%`,
+              background: `linear-gradient(90deg, ${primaryColor}, ${primaryColor}80)`,
+            }}
+          />
+        </div>
+        <div className="text-sm text-gray-400 whitespace-nowrap">
+          已加载 <span style={{ color: primaryColor }}>{loadedCount}</span> / {totalCount}
+        </div>
+      </div>
+
+      {/* 加载状态 */}
+      {loadingMore && (
+        <div className="flex items-center gap-2 text-sm text-gray-400">
+          <div 
+            className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin"
+            style={{ borderColor: primaryColor, borderTopColor: 'transparent' }}
+          />
+          <span>加载更多中...</span>
+        </div>
+      )}
+
+      {/* 已加载全部 */}
+      {!hasMore && !loadingMore && loadedCount > 0 && (
+        <div className="text-sm text-gray-500">
+          ✓ 已加载全部内容
+        </div>
+      )}
+
+      {/* 滚动提示 */}
+      {hasMore && !loadingMore && (
+        <div className="text-sm text-gray-500">
+          ↓ 向下滚动加载更多
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function FileGrid({
   files,
   viewMode,
@@ -724,11 +796,13 @@ export function FileGrid({
   onRateFile,
   onHoverFile,
   loading,
+  loadingMore = false,
   userSettings,
   pagination,
   currentPage = 1,
-  onPageChange,
+  onLoadMore,
   searchQuery,
+  thumbnailSize = 200,
 }: FileGridProps) {
   const primaryColor = userSettings?.primaryColor || '#00ffff';
   const [playingSequence, setPlayingSequence] = useState<SequenceGroup | null>(null);
@@ -932,10 +1006,22 @@ export function FileGrid({
     );
   }
 
+  // 公共滚动处理函数
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (!onLoadMore) return;
+    
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    const isNearBottom = scrollTop + clientHeight >= scrollHeight - 200;
+    
+    if (isNearBottom && !loadingMore && pagination && currentPage < pagination.totalPages) {
+      onLoadMore();
+    }
+  }, [onLoadMore, loadingMore, pagination, currentPage]);
+
   if (viewMode === 'list') {
     return (
       <div className="flex-1 flex flex-col min-h-0">
-        <div className="flex-1 overflow-y-auto content-scroll">
+        <div className="flex-1 overflow-y-auto content-scroll" onScroll={handleScroll}>
           {/* Sequence info in list view */}
           {sequences.length > 0 && (
             <div className="p-4 border-b border-apple-glassBorder">
@@ -971,12 +1057,13 @@ export function FileGrid({
           </div>
         </div>
 
-        {/* Pagination */}
-        {pagination && onPageChange && (
-          <PaginationBar
-            pagination={pagination}
-            currentPage={currentPage}
-            onPageChange={onPageChange}
+        {/* 无限滚动加载指示器 */}
+        {pagination && (
+          <InfiniteScrollIndicator
+            loadedCount={files.length}
+            totalCount={pagination.total}
+            loadingMore={loadingMore}
+            hasMore={currentPage < pagination.totalPages}
             primaryColor={primaryColor}
           />
         )}
@@ -994,7 +1081,7 @@ export function FileGrid({
   if (viewMode === 'masonry') {
     return (
       <div className="flex-1 flex flex-col min-h-0">
-        <div className="flex-1 overflow-y-auto content-scroll p-4">
+        <div className="flex-1 overflow-y-auto content-scroll p-4" onScroll={handleScroll}>
           <div className="masonry-grid">
             {columns.map((column, colIndex) => (
               <div key={colIndex} className="masonry-column flex-1">
@@ -1015,12 +1102,13 @@ export function FileGrid({
           </div>
         </div>
 
-        {/* Pagination */}
-        {pagination && onPageChange && (
-          <PaginationBar
-            pagination={pagination}
-            currentPage={currentPage}
-            onPageChange={onPageChange}
+        {/* 无限滚动加载指示器 */}
+        {pagination && (
+          <InfiniteScrollIndicator
+            loadedCount={files.length}
+            totalCount={pagination.total}
+            loadingMore={loadingMore}
+            hasMore={currentPage < pagination.totalPages}
             primaryColor={primaryColor}
           />
         )}
@@ -1035,6 +1123,7 @@ export function FileGrid({
         ref={containerRef}
         className="flex-1 overflow-y-auto content-scroll p-4 relative select-none"
         onMouseDown={handleMouseDown}
+        onScroll={handleScroll}
       >
         {/* 框选框 */}
         {selectionBoxStyle && (
@@ -1082,7 +1171,14 @@ export function FileGrid({
                 其他文件 ({nonSequenceFiles.length})
               </h3>
             )}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4">
+            <div 
+              className="grid gap-4"
+              style={{
+                gridTemplateColumns: viewMode === 'list' 
+                  ? '1fr' 
+                  : `repeat(auto-fill, minmax(${thumbnailSize}px, 1fr))`,
+              }}
+            >
               {nonSequenceFiles.map(file => (
                 <FileCard
                   key={file.id}
@@ -1095,6 +1191,7 @@ export function FileGrid({
                   viewMode={viewMode}
                   registerRef={(el) => registerFileRef(file.id, el)}
                   isDragging={isDragging}
+                  thumbnailSize={thumbnailSize}
                 />
               ))}
             </div>
@@ -1102,12 +1199,13 @@ export function FileGrid({
         )}
       </div>
 
-      {/* Pagination */}
-      {pagination && onPageChange && (
-        <PaginationBar
-          pagination={pagination}
-          currentPage={currentPage}
-          onPageChange={onPageChange}
+      {/* 无限滚动加载指示器 */}
+      {pagination && (
+        <InfiniteScrollIndicator
+          loadedCount={files.length}
+          totalCount={pagination.total}
+          loadingMore={loadingMore}
+          hasMore={currentPage < pagination.totalPages}
           primaryColor={primaryColor}
         />
       )}

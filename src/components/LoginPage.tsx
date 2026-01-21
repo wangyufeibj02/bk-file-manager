@@ -60,16 +60,12 @@ export function LoginPage({ onLogin, settings }: LoginPageProps) {
         loginTime: Date.now() 
       }));
       
-      onLogin({
-        id: data.user.id,
-        username: data.user.username,
-        role: data.user.role,
-      }, data.user.servers || servers);
+      // 登录成功后刷新页面，避免 React Hooks 顺序问题
+      window.location.reload();
     } catch (err) {
       setError('网络错误，请检查服务器连接');
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   const addServer = () => {

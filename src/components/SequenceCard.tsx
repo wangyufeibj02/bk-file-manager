@@ -6,9 +6,10 @@ import { getFileUrl } from '../utils/filePath';
 interface SequenceCardProps {
   sequence: SequenceGroup;
   onClick: () => void;
+  thumbnailSize?: number; // 缩略图大小
 }
 
-export function SequenceCard({ sequence, onClick }: SequenceCardProps) {
+export function SequenceCard({ sequence, onClick, thumbnailSize = 200 }: SequenceCardProps) {
   const [isHovering, setIsHovering] = useState(false);
   const [previewFrame, setPreviewFrame] = useState(0);
   const intervalRef = useRef<NodeJS.Timeout>();
@@ -38,15 +39,22 @@ export function SequenceCard({ sequence, onClick }: SequenceCardProps) {
   const displayFile = sequence.files[previewFrame] || sequence.thumbnailFile;
   const thumbnailUrl = getFileUrl(displayFile.thumbnailPath || displayFile.path);
 
+  // 根据缩略图大小计算高度
+  const cardHeight = Math.round(thumbnailSize * 0.75); // 4:3 比例
+
   return (
     <div
       className="group relative rounded-2xl overflow-hidden cursor-pointer card-apple"
+      style={{ width: thumbnailSize }}
       onClick={onClick}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
       {/* Thumbnail */}
-      <div className="aspect-video bg-apple-bgSecondary relative">
+      <div 
+        className="bg-apple-bgSecondary relative"
+        style={{ height: cardHeight }}
+      >
         {!thumbnailLoaded && (
           <div className="absolute inset-0 skeleton" />
         )}

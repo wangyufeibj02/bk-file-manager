@@ -16,10 +16,13 @@ model Folder {
   files       File[]
   color       String?
   icon        String?
+  sortOrder   Int      @default(0)  // 排序权重，数值越小越靠前
   isSmartFolder Boolean @default(false)
   smartRules  String?  // JSON string for smart folder rules
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([parentId, sortOrder])  // 优化同级文件夹排序查询
 }
 
 model File {
@@ -29,7 +32,7 @@ model File {
   path         String
   thumbnailPath String?
   mimeType     String
-  size         Int
+  size         BigInt
   width        Int?
   height       Int?
   duration     Float?   // For video/audio files
@@ -53,6 +56,10 @@ model File {
   @@index([mimeType])
   @@index([dominantColor])
   @@index([rating])
+  @@index([originalName])
+  @@index([createdAt])
+  @@index([folderId, createdAt])
+  @@index([name])
 }
 
 model Tag {
@@ -128,7 +135,7 @@ model Trash {
   originalPath  String
   thumbnailPath String?
   mimeType      String
-  size          Int
+  size          BigInt
   folderId      String?
   folderName    String?  // Store folder name for reference
   deletedAt     DateTime @default(now())

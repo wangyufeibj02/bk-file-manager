@@ -102,19 +102,101 @@ export function ThreeDPreview({ url, fileName }: ThreeDPreviewProps) {
         }
 
         // Load the model
+        console.log('[3D Preview] Loading:', ext, url);
         const result = await new Promise((resolve, reject) => {
-          loader.load(
-            url,
-            (object: any) => resolve(object),
-            undefined,
-            (error: any) => reject(error)
-          );
+          // 对于 FBX，使用全局错误处理来捕获同步错误
+          if (ext === 'fbx') {
+            let keyframeErrorOccurred = false;
+            let loadCompleted = false;
+            
+            // 设置全局错误处理器
+            const errorHandler = (event: ErrorEvent) => {
+              if (event.message?.includes('no keyframes in track')) {
+                keyframeErrorOccurred = true;
+                // 阻止错误继续传播
+                event.preventDefault();
+                // 如果加载已完成，忽略这个错误
+                if (loadCompleted) {
+                  console.warn('[3D Preview] FBX keyframe warning ignored (model loaded)');
+                  return;
+                }
+              }
+            };
+            
+            window.addEventListener('error', errorHandler);
+            
+            try {
+              loader.load(
+                url,
+                (object: any) => {
+                  loadCompleted = true;
+                  window.removeEventListener('error', errorHandler);
+                  
+                  if (keyframeErrorOccurred) {
+                    console.warn('[3D Preview] FBX loaded with keyframe warnings, clearing animations');
+                    // 清除有问题的动画数据
+                    if (object && object.animations) {
+                      object.animations = [];
+                    }
+                  }
+                  
+                  console.log('[3D Preview] Loaded successfully:', object);
+                  resolve(object);
+                },
+                (progress: any) => {
+                  if (progress.lengthComputable) {
+                    console.log('[3D Preview] Progress:', Math.round(progress.loaded / progress.total * 100) + '%');
+                  }
+                },
+                (error: any) => {
+                  window.removeEventListener('error', errorHandler);
+                  console.error('[3D Preview] Load error:', error);
+                  const isKeyframeError = error?.message?.includes('no keyframes in track') ||
+                                        error?.toString().includes('no keyframes in track');
+                  if (isKeyframeError || keyframeErrorOccurred) {
+                    reject(new Error('FBX 文件包含无效的动画数据。请尝试在建模软件中重新导出 FBX 文件，或移除动画数据。'));
+                  } else {
+                    reject(new Error(`加载失败: ${error.message || '未知错误'}`));
+                  }
+                }
+              );
+            } catch (syncError: any) {
+              window.removeEventListener('error', errorHandler);
+              const isKeyframeError = syncError?.message?.includes('no keyframes in track') ||
+                                    syncError?.toString().includes('no keyframes in track');
+              if (isKeyframeError || keyframeErrorOccurred) {
+                reject(new Error('FBX 文件包含无效的动画数据。请尝试在建模软件中重新导出 FBX 文件，或移除动画数据。'));
+              } else {
+                reject(syncError);
+              }
+            }
+          } else {
+            // 其他格式正常加载
+            loader.load(
+              url,
+              (object: any) => {
+                console.log('[3D Preview] Loaded successfully:', object);
+                resolve(object);
+              },
+              (progress: any) => {
+                if (progress.lengthComputable) {
+                  console.log('[3D Preview] Progress:', Math.round(progress.loaded / progress.total * 100) + '%');
+                }
+              },
+              (error: any) => {
+                console.error('[3D Preview] Load error:', error);
+                reject(new Error(`加载失败: ${error.message || '未知错误'}`));
+              }
+            );
+          }
         });
 
         if (cancelled) return;
 
         // Handle different loader results
         let model: any;
+        let mixer: any = null;
+        
         if (ext === 'stl' || ext === 'ply') {
           // STL/PLY loaders return geometry
           geometry = result;
@@ -126,8 +208,30 @@ export function ThreeDPreview({ url, fileName }: ThreeDPreviewProps) {
           model = new THREE.Mesh(geometry, material);
         } else if (ext === 'gltf' || ext === 'glb') {
           model = (result as any).scene;
+          // 处理 GLTF 动画
+          if ((result as any).animations?.length > 0) {
+            mixer = new THREE.AnimationMixer(model);
+            (result as any).animations.forEach((clip: any) => {
+              mixer.clipAction(clip).play();
+            });
+          }
         } else if (ext === 'dae') {
           model = (result as any).scene;
+        } else if (ext === 'fbx') {
+          model = result;
+          // 处理 FBX 动画 - 过滤空轨道避免警告
+          if ((result as any).animations?.length > 0) {
+            mixer = new THREE.AnimationMixer(model);
+            (result as any).animations.forEach((clip: any) => {
+              // 过滤掉没有关键帧的轨道
+              clip.tracks = clip.tracks.filter((track: any) => {
+                return track.times && track.times.length > 0;
+              });
+              if (clip.tracks.length > 0) {
+                mixer.clipAction(clip).play();
+              }
+            });
+          }
         } else {
           model = result;
         }
@@ -156,8 +260,13 @@ export function ThreeDPreview({ url, fileName }: ThreeDPreviewProps) {
         setInfo({ vertices, faces: Math.floor(faces) });
 
         // Animation loop
+        const clock = new THREE.Clock();
         function animate() {
           animationId = requestAnimationFrame(animate);
+          const delta = clock.getDelta();
+          if (mixer) {
+            mixer.update(delta);
+          }
           controls.update();
           renderer.render(scene, camera);
         }

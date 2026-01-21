@@ -14,6 +14,12 @@ import { authRoutes } from './routes/auth.js';
 import historyRoutes from './routes/history.js';
 import { optionalAuthMiddleware } from './lib/auth.js';
 
+// 添加 BigInt JSON 序列化支持
+// @ts-ignore
+BigInt.prototype.toJSON = function() {
+  return Number(this);
+};
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -64,6 +70,12 @@ app.get('/local-file', optionalAuthMiddleware, (req, res) => {
     '.psd': 'image/vnd.adobe.photoshop',
     '.ai': 'application/postscript',
     '.apng': 'image/apng',
+    // 3D 模型格式
+    '.fbx': 'application/octet-stream',
+    '.obj': 'text/plain',
+    '.gltf': 'model/gltf+json',
+    '.glb': 'model/gltf-binary',
+    '.stl': 'model/stl',
   };
   
   if (mimeOverrides[ext]) {
@@ -107,8 +119,8 @@ app.use((_req, res) => {
   res.status(404).json({ error: '接口不存在', code: 'NOT_FOUND' });
 });
 
-// 启动服务器
-app.listen(config.port, () => {
+// 启动服务器 - 监听所有网络接口以支持局域网访问
+app.listen(config.port, '0.0.0.0', () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════╗
 ║                                                       ║

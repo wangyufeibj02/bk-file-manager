@@ -11,7 +11,7 @@ interface SequencePlayerProps {
 export function SequencePlayer({ sequence, onClose }: SequencePlayerProps) {
   const [currentFrame, setCurrentFrame] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [fps, setFps] = useState(24);
+  const [fps, setFps] = useState(25); // 默认25帧/秒
   const [loop, setLoop] = useState(true);
   const [preloadedImages, setPreloadedImages] = useState<HTMLImageElement[]>([]);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -19,27 +19,48 @@ export function SequencePlayer({ sequence, onClose }: SequencePlayerProps) {
   const animationRef = useRef<number>();
   const lastTimeRef = useRef<number>(0);
 
-  // Preload all images
+  // Preload all images - 使用缩略图以加快加载速度
   useEffect(() => {
     const images: HTMLImageElement[] = [];
     let loadedCount = 0;
+    const totalFiles = sequence.files.length;
 
-    sequence.files.forEach((file, index) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        loadedCount++;
-        setLoadProgress(Math.round((loadedCount / sequence.files.length) * 100));
-      };
-      img.onerror = () => {
-        loadedCount++;
-        setLoadProgress(Math.round((loadedCount / sequence.files.length) * 100));
-      };
-      img.src = getFileUrl(file.path);
-      images[index] = img;
-    });
+    // 并行加载，但限制并发数避免阻塞
+    const loadBatch = (startIndex: number, batchSize: number) => {
+      const endIndex = Math.min(startIndex + batchSize, totalFiles);
+      for (let i = startIndex; i < endIndex; i++) {
+        const file = sequence.files[i];
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          loadedCount++;
+          setLoadProgress(Math.round((loadedCount / totalFiles) * 100));
+          // 加载下一批
+          if (loadedCount === endIndex && endIndex < totalFiles) {
+            loadBatch(endIndex, batchSize);
+          }
+        };
+        img.onerror = () => {
+          loadedCount++;
+          setLoadProgress(Math.round((loadedCount / totalFiles) * 100));
+          if (loadedCount === endIndex && endIndex < totalFiles) {
+            loadBatch(endIndex, batchSize);
+          }
+        };
+        // 优先使用缩略图，加载更快
+        img.src = getFileUrl(file.thumbnailPath || file.path);
+        images[i] = img;
+      }
+    };
 
+    // 初始化图片数组
+    for (let i = 0; i < totalFiles; i++) {
+      images[i] = new Image();
+    }
     setPreloadedImages(images);
+
+    // 开始批量加载，每批 10 张
+    loadBatch(0, 10);
 
     return () => {
       images.forEach(img => {
@@ -252,18 +273,37 @@ export function SequencePlayer({ sequence, onClose }: SequencePlayerProps) {
             <FiRepeat size={20} />
           </button>
 
-          {/* FPS selector */}
-          <div className="flex items-center gap-2">
+          {/* FPS slider with editable input */}
+          <div className="flex items-center gap-3">
             <span className="text-sm text-apple-textSecondary">FPS:</span>
-            <select
+            <input
+              type="range"
+              min={1}
+              max={120}
               value={fps}
               onChange={(e) => setFps(parseInt(e.target.value, 10))}
-              className="px-3 py-2 rounded-lg bg-apple-glass border border-apple-glassBorder text-apple-text text-sm focus:outline-none focus:ring-2 focus:ring-apple-accent/50"
-            >
-              {[12, 15, 24, 25, 30, 60].map(f => (
-                <option key={f} value={f}>{f}</option>
-              ))}
-            </select>
+              className="w-24 h-2 bg-apple-glass rounded-full appearance-none cursor-pointer
+                [&::-webkit-slider-thumb]:appearance-none 
+                [&::-webkit-slider-thumb]:w-4 
+                [&::-webkit-slider-thumb]:h-4 
+                [&::-webkit-slider-thumb]:bg-apple-accent 
+                [&::-webkit-slider-thumb]:rounded-full
+                [&::-webkit-slider-thumb]:shadow-lg"
+            />
+            <input
+              type="number"
+              min={1}
+              max={120}
+              value={fps}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                if (!isNaN(val) && val >= 1 && val <= 120) {
+                  setFps(val);
+                }
+              }}
+              className="w-14 text-sm font-mono text-center px-2 py-1 rounded bg-apple-glass border border-apple-glassBorder focus:outline-none focus:ring-2 focus:ring-apple-accent/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              style={{ color: '#00ffff' }}
+            />
           </div>
         </div>
 

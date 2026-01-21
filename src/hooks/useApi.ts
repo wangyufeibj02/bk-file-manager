@@ -165,10 +165,46 @@ export function useApi() {
       body: JSON.stringify(data),
     }), [fetchWithError]);
 
-  const deleteFolder = useCallback(async (id: string) => {
-    await fetchWithError<void>(`/folders/${id}`, { method: 'DELETE' });
-    showSuccess('文件夹已删除');
-  }, [fetchWithError]);
+  const deleteFolder = useCallback(async (id: string, force = false): Promise<{ needConfirm?: boolean; stats?: { totalFiles: number; totalFolders: number }; message?: string } | void> => {
+    const url = force ? `/folders/${id}?force=true` : `/folders/${id}`;
+    try {
+      const response = await fetch(`/api${url}`, { 
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      
+      if (response.status === 204) {
+        showSuccess('文件夹已删除');
+        return;
+      }
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        // 如果需要确认删除
+        if (data.needConfirm) {
+          return {
+            needConfirm: true,
+            stats: data.stats,
+            message: data.message,
+          };
+        }
+        throw new Error(data.error || '删除文件夹失败');
+      }
+      
+      // 级联删除成功
+      if (data.deleted) {
+        showSuccess(`已删除 ${data.deleted.filesDeleted} 个文件和 ${data.deleted.foldersDeleted} 个文件夹`);
+      } else {
+        showSuccess('文件夹已删除');
+      }
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '删除文件夹失败';
+      showError(message);
+      throw err;
+    }
+  }, []);
 
   // ===== 文件 =====
   const getFiles = useCallback((filters: FileFilters = {}, page = 1, limit = 50) => {
@@ -199,7 +235,7 @@ export function useApi() {
   const getFile = useCallback((id: string) => 
     fetchWithError<FileItem>(`/files/${id}`), [fetchWithError]);
 
-  const uploadFiles = useCallback(async (files: File[], folderId?: string) => {
+  const uploadFiles = useCallback(async (files: File[], folderId?: string, onProgress?: (progress: number) => void) => {
     setLoading(true);
     setError(null);
     
@@ -216,28 +252,56 @@ export function useApi() {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const response = await fetch(`${API_BASE}/files/upload`, {
-        method: 'POST',
-        headers,
-        body: formData,
+      // 使用XMLHttpRequest支持进度
+      return new Promise<FileItem[]>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable && onProgress) {
+            const progress = Math.round((e.loaded / e.total) * 100);
+            onProgress(progress);
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            const result = JSON.parse(xhr.responseText) as FileItem[];
+            dismissLoading(toastId);
+            showSuccess(`成功上传 ${result.length} 个文件`);
+            setLoading(false);
+            resolve(result);
+          } else {
+            const error = new Error(`上传失败: ${xhr.status}`);
+            setError(error.message);
+            dismissLoading(toastId);
+            showError(error.message);
+            setLoading(false);
+            reject(error);
+          }
+        });
+
+        xhr.addEventListener('error', () => {
+          const error = new Error('网络错误');
+          setError(error.message);
+          dismissLoading(toastId);
+          showError(error.message);
+          setLoading(false);
+          reject(error);
+        });
+
+        xhr.open('POST', `${API_BASE}/files/upload`);
+        Object.entries(headers).forEach(([key, value]) => {
+          xhr.setRequestHeader(key, value);
+        });
+        xhr.send(formData);
       });
-      
-      if (!response.ok) {
-        throw new Error(`上传失败: ${response.status}`);
-      }
-      
-      const result = await response.json() as FileItem[];
-      dismissLoading(toastId);
-      showSuccess(`成功上传 ${result.length} 个文件`);
-      return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : '上传失败';
       setError(message);
       dismissLoading(toastId);
       showError(message);
-      throw err;
-    } finally {
       setLoading(false);
+      throw err;
     }
   }, []);
 
@@ -415,10 +479,54 @@ export function useApi() {
     showSuccess('回收站已清空');
   }, [fetchWithError]);
 
+  // ===== 文件分享 =====
+  const createShareLink = useCallback(async (fileId: string, options?: { expiresIn?: number; password?: string }) => {
+    const result = await fetchWithError<{ shareId: string; shareUrl: string; expiresAt?: string }>('/files/share', {
+      method: 'POST',
+      body: JSON.stringify({
+        fileId,
+        expiresIn: options?.expiresIn,
+        password: options?.password,
+      }),
+    });
+    showSuccess('分享链接已创建');
+    return result;
+  }, [fetchWithError]);
+
+  const getShareLinks = useCallback(async (fileId: string) => {
+    const links = await fetchWithError<Array<{
+      id: string;
+      fileId: string;
+      shareUrl: string;
+      expiresAt?: string;
+      password?: string;
+      createdAt: string;
+    }>>(`/files/share?fileId=${fileId}`);
+    return links;
+  }, [fetchWithError]);
+
+  const deleteShareLink = useCallback(async (shareId: string) => {
+    await fetchWithError<{ success: boolean }>(`/files/share/${shareId}`, {
+      method: 'DELETE',
+    });
+    showSuccess('分享链接已删除');
+  }, [fetchWithError]);
+
+  // 获取认证头
+  const getAuthHeaders = useCallback(() => {
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  }, []);
+
   return {
     loading,
     error,
     baseUrl: API_BASE,
+    authHeaders: getAuthHeaders(),
     // 认证
     login,
     verifyToken,
@@ -460,5 +568,9 @@ export function useApi() {
     restoreFromTrash,
     deleteFromTrash,
     emptyTrash,
+    // 文件分享
+    createShareLink,
+    getShareLinks,
+    deleteShareLink,
   };
 }

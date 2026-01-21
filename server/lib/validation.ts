@@ -91,7 +91,7 @@ export const fileQuerySchema = z.object({
     rating: z.coerce.number().int().min(0).max(5).optional(),
     tagIds: z.string().optional(),
     format: z.string().max(200).optional(),
-    sortBy: z.enum(['createdAt', 'name', 'size', 'rating', 'updatedAt']).default('createdAt'),
+    sortBy: z.enum(['createdAt', 'format', 'name', 'size', 'rating', 'updatedAt']).default('createdAt'),
     sortOrder: z.enum(['asc', 'desc']).default('desc'),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(200).default(50),

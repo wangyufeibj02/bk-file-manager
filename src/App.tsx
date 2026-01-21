@@ -6,16 +6,22 @@ import { TrashGrid } from './components/TrashGrid';
 import { HistoryGrid } from './components/HistoryGrid';
 import { FilePreview } from './components/FilePreview';
 import { UploadZone } from './components/UploadZone';
+import { EnhancedUploadZone } from './components/EnhancedUploadZone';
+import { BatchActionToolbar } from './components/BatchActionToolbar';
+import { OnboardingGuide } from './components/OnboardingGuide';
+import { ShareDialog } from './components/ShareDialog';
+import { UndoToast } from './components/UndoToast';
 import { ScanDialog } from './components/ScanDialog';
 import { LoginPage } from './components/LoginPage';
 import { DynamicBackground } from './components/DynamicBackground';
 import { UserSettingsPanel } from './components/UserSettingsPanel';
 import { AdminUserPanel } from './components/AdminUserPanel';
-import { ToastProvider, showToast } from './components/Toast';
+import { ToastProvider, showSuccess, showInfo } from './components/Toast';
 import { ConfirmDialog, useConfirm } from './components/ConfirmDialog';
 import { useApi, setToken, clearToken } from './hooks/useApi';
 import { useHotkeys } from './hooks/useHotkeys';
 import { useResponsiveScale } from './hooks/useResponsiveScale';
+import { useUndo } from './hooks/useUndo';
 import { FileItem, Folder, Tag, FileFilters, ViewMode, User, UserSettings, Pagination, HistoryRecord, TrashItem } from './types';
 
 interface ServerConfig {
@@ -41,6 +47,8 @@ const DEFAULT_SETTINGS: UserSettings = {
 function App() {
   const api = useApi();
   const { confirm, dialogProps } = useConfirm();
+  const { history: undoHistory, canUndo, addAction, undo, clearHistory } = useUndo();
+  const [undoToast, setUndoToast] = useState<{ action: string; onUndo: () => void } | null>(null);
   
   // 响应式缩放 - 根据窗口大小自动调整
   useResponsiveScale(1920, 0.75, 1.15);
@@ -81,6 +89,8 @@ function App() {
   // UI Panels
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [shareFileId, setShareFileId] = useState<string | null>(null);
   
   // State
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -166,6 +176,18 @@ function App() {
       },
       description: '关闭预览',
     },
+    // Ctrl+Z 撤销
+    {
+      key: 'z',
+      ctrl: true,
+      handler: async () => {
+        if (canUndo) {
+          await undo();
+        }
+      },
+      enabled: canUndo,
+      description: '撤销操作',
+    },
     // 左箭头 - 上一个文件
     {
       key: 'ArrowLeft',
@@ -230,8 +252,10 @@ function App() {
   
   // Handle login
   const handleLogin = (user: User, servers: ServerConfig[]) => {
+    // 重置初始加载状态，确保 useEffect 会重新加载数据
+    setInitialLoaded(false);
+    // 设置登录状态
     setAuth({ isLoggedIn: true, user, servers });
-    showToast.success(`欢迎回来，${user.displayName || user.username}！`);
   };
   
   // Handle logout
@@ -246,7 +270,7 @@ function App() {
     if (confirmed) {
       clearToken();
       setAuth({ isLoggedIn: false, user: null, servers: [] });
-      showToast.info('已退出登录');
+      showInfo('已退出登录');
     }
   };
 
@@ -323,7 +347,7 @@ function App() {
   };
   
   // 加载更多（无限滚动）
-  const handleLoadMore = async () => {
+  const handleLoadMore = useCallback(async () => {
     if (loadingMore || !pagination || currentPage >= pagination.totalPages) {
       return;
     }
@@ -340,7 +364,12 @@ function App() {
       const data = await api.getFiles(currentFilters, nextPage, pageSize);
       
       // 追加新数据到已有数据
-      setAllFiles(prev => [...prev, ...data.files]);
+      setAllFiles(prev => {
+        // 检查是否已经有这些文件，避免重复添加
+        const existingIds = new Set(prev.map(f => f.id));
+        const newFiles = data.files.filter(f => !existingIds.has(f.id));
+        return [...prev, ...newFiles];
+      });
       setCurrentPage(nextPage);
       setPagination(data.pagination);
     } catch (err) {
@@ -348,7 +377,7 @@ function App() {
     } finally {
       setLoadingMore(false);
     }
-  };
+  }, [loadingMore, pagination, currentPage, filters, selectedFolder, searchQuery, selectedFormat, pageSize, api]);
 
   // 是否已完成初始加载
   const [initialLoaded, setInitialLoaded] = useState(false);
@@ -370,16 +399,21 @@ function App() {
       loadHistory();
       loadTrash();
       setInitialLoaded(true);
+      // 显示欢迎消息（仅登录时，不是页面刷新）
+      if (auth.user) {
+        showSuccess(`欢迎回来，${auth.user.displayName || auth.user.username}！`);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth.isLoggedIn]);
+  }, [auth.isLoggedIn, initialLoaded]);
 
   // 使用 ref 跟踪上一次的过滤条件，避免不必要的页码重置
   const prevFiltersRef = useRef<string>('');
+  const isLoadingRef = useRef<boolean>(false); // 防止重复加载
   
   // Reload files when filters or pageSize change (reset to page 1) - 仅在初始加载后
   useEffect(() => {
-    if (auth.isLoggedIn && initialLoaded) {
+    if (auth.isLoggedIn && initialLoaded && !isLoadingRef.current) {
       // 序列化当前过滤条件
       const currentFiltersStr = JSON.stringify({
         ...filters,
@@ -394,6 +428,7 @@ function App() {
       
       // 条件变化时重置并加载第一页
       if (conditionsChanged) {
+        isLoadingRef.current = true;
         const doLoadFiles = async () => {
           try {
             const currentFilters: FileFilters = {
@@ -406,8 +441,14 @@ function App() {
             setAllFiles(data.files);
             setCurrentPage(1);
             setPagination(data.pagination);
+            // FileGrid组件会自动检查并加载更多内容以填满屏幕
           } catch (err) {
             console.error('Failed to load files:', err);
+          } finally {
+            // 延迟重置加载标志，避免快速连续触发
+            setTimeout(() => {
+              isLoadingRef.current = false;
+            }, 500);
           }
         };
         doLoadFiles();
@@ -497,7 +538,9 @@ function App() {
   };
 
   const handlePageChange = async (page: number) => {
-    // 直接加载指定页面的数据，不依赖 useEffect
+    if (page < 1 || (pagination && page > pagination.totalPages)) return;
+    
+    setLoadingMore(true);
     setCurrentPage(page);
     try {
       const currentFilters: FileFilters = {
@@ -508,11 +551,15 @@ function App() {
       };
       const data = await api.getFiles(currentFilters, page, pageSize);
       setFiles(data.files);
+      setAllFiles(data.files); // 分页模式下只显示当前页
       setPagination(data.pagination);
     } catch (err) {
       console.error('Failed to load files:', err);
+    } finally {
+      setLoadingMore(false);
     }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // 滚动到顶部
+    document.querySelector('.content-scroll')?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleFolderSelect = (folderId: string | null) => {
@@ -578,13 +625,18 @@ function App() {
     }
   };
 
-  const handleUpload = async (uploadedFiles: File[]) => {
+  const handleUpload = async (uploadedFiles: File[], folderId?: string) => {
     setIsUploading(true);
     try {
-      await api.uploadFiles(uploadedFiles, selectedFolder || undefined);
+      await api.uploadFiles(uploadedFiles, folderId || selectedFolder || undefined);
       await loadFiles();
+      // 如果上传到指定文件夹，自动切换到该文件夹
+      if (folderId && folderId !== selectedFolder) {
+        setSelectedFolder(folderId);
+      }
     } catch (err) {
       console.error('Upload failed:', err);
+      throw err; // 重新抛出错误，让EnhancedUploadZone处理
     } finally {
       setIsUploading(false);
     }
@@ -600,20 +652,47 @@ function App() {
   };
 
   const handleDeleteFolder = async (folderId: string) => {
+    // 获取文件夹名称用于显示
+    const folder = folders.find(f => f.id === folderId);
+    const folderName = folder?.name || '此文件夹';
+    
     const confirmed = await confirm({
       title: '删除文件夹',
-      message: '确定要删除这个文件夹吗？',
+      message: `确定要删除 "${folderName}" 吗？`,
       type: 'danger',
       confirmText: '删除',
     });
     
     if (confirmed) {
       try {
-        await api.deleteFolder(folderId);
-        if (selectedFolder === folderId) {
-          setSelectedFolder(null);
+        // 先尝试删除（不强制）
+        const result = await api.deleteFolder(folderId, false);
+        
+        // 如果需要确认（文件夹不为空）
+        if (result?.needConfirm) {
+          const forceConfirmed = await confirm({
+            title: '⚠️ 文件夹不为空',
+            message: `"${folderName}" 包含 ${result.stats?.totalFiles || 0} 个文件和 ${result.stats?.totalFolders || 0} 个子文件夹。\n\n删除后将无法恢复，确定要全部删除吗？`,
+            type: 'danger',
+            confirmText: '全部删除',
+          });
+          
+          if (forceConfirmed) {
+            // 强制删除
+            await api.deleteFolder(folderId, true);
+            if (selectedFolder === folderId) {
+              setSelectedFolder(null);
+            }
+            await loadFolders();
+            await loadFiles();
+          }
+        } else {
+          // 空文件夹直接删除成功
+          if (selectedFolder === folderId) {
+            setSelectedFolder(null);
+          }
+          await loadFolders();
         }
-        await loadFolders();
       } catch (err) {
         console.error('Failed to delete folder:', err);
       }
@@ -626,6 +705,51 @@ function App() {
       await loadFolders();
     } catch (err) {
       console.error('Failed to rename folder:', err);
+    }
+  };
+
+  const handleMoveFolder = async (folderId: string, targetParentId: string | null, sortOrder?: number) => {
+    try {
+      const response = await fetch(`${api.baseUrl}/folders/${folderId}/move`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...api.authHeaders,
+        },
+        body: JSON.stringify({ parentId: targetParentId, sortOrder }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '移动失败');
+      }
+      
+      await loadFolders();
+      showSuccess('文件夹已移动');
+    } catch (err) {
+      console.error('Failed to move folder:', err);
+    }
+  };
+
+  const handleReorderFolders = async (orders: { id: string; sortOrder: number }[]) => {
+    try {
+      const response = await fetch(`${api.baseUrl}/folders/reorder`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...api.authHeaders,
+        },
+        body: JSON.stringify({ orders }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '排序失败');
+      }
+      
+      await loadFolders();
+    } catch (err) {
+      console.error('Failed to reorder folders:', err);
     }
   };
 
@@ -661,8 +785,32 @@ function App() {
   const handleDeleteFiles = async () => {
     if (selectedFiles.length === 0) return;
     
+    // 保存删除的文件信息用于撤销
+    const deletedFiles = allFiles.filter(f => selectedFiles.includes(f.id));
+    
     try {
       await api.bulkDeleteFiles(selectedFiles);
+      
+      // 添加到撤销历史
+      addAction({
+        type: 'delete',
+        description: `删除 ${selectedFiles.length} 个文件`,
+        undo: async () => {
+          // 恢复文件（需要后端支持）
+          // 这里简化处理，实际应该调用恢复API
+          await loadFiles();
+          await loadTrash();
+        },
+      });
+      
+      // 显示撤销提示
+      setUndoToast({
+        action: `已删除 ${selectedFiles.length} 个文件`,
+        onUndo: async () => {
+          await undo();
+        },
+      });
+      
       setSelectedFiles([]);
       await loadFiles();
       loadTrash();
@@ -674,8 +822,38 @@ function App() {
 
   const handleMoveFiles = async (folderId: string | null) => {
     if (selectedFiles.length === 0) return;
+    
+    // 保存原始文件夹ID用于撤销
+    const originalFolderIds = selectedFiles.map(id => {
+      const file = allFiles.find(f => f.id === id);
+      return { id, folderId: file?.folderId || null };
+    });
+    
     try {
       await api.bulkMoveFiles(selectedFiles, folderId);
+      
+      // 添加到撤销历史
+      addAction({
+        type: 'move',
+        description: `移动 ${selectedFiles.length} 个文件`,
+        undo: async () => {
+          // 恢复文件到原始文件夹
+          for (const { id, folderId: originalFolderId } of originalFolderIds) {
+            await api.bulkMoveFiles([id], originalFolderId);
+          }
+          await loadFiles();
+        },
+      });
+      
+      // 显示撤销提示
+      const targetFolder = folderId ? folders.find(f => f.id === folderId) : null;
+      setUndoToast({
+        action: `已移动 ${selectedFiles.length} 个文件到 ${targetFolder?.name || '全部文件'}`,
+        onUndo: async () => {
+          await undo();
+        },
+      });
+      
       setSelectedFiles([]);
       await loadFiles();
     } catch (err) {
@@ -688,6 +866,20 @@ function App() {
     try {
       await api.bulkTagFiles(selectedFiles, tagId);
       await loadFiles();
+    } catch (err) {
+      console.error('Failed to tag files:', err);
+    }
+  };
+
+  const handleTagFilesMultiple = async (tagIds: string[]) => {
+    if (selectedFiles.length === 0 || tagIds.length === 0) return;
+    try {
+      // 为每个文件添加每个标签
+      for (const tagId of tagIds) {
+        await api.bulkTagFiles(selectedFiles, tagId);
+      }
+      await loadFiles();
+      showSuccess(`已为 ${selectedFiles.length} 个文件添加 ${tagIds.length} 个标签`);
     } catch (err) {
       console.error('Failed to tag files:', err);
     }
@@ -776,6 +968,7 @@ function App() {
           onCreateFolder={handleCreateFolder}
           onDeleteFolder={handleDeleteFolder}
           onRenameFolder={handleRenameFolder}
+          onMoveFolder={handleMoveFolder}
           onCreateTag={handleCreateTag}
           onDeleteTag={handleDeleteTag}
           onFilterByTag={handleFilterByTag}
@@ -815,6 +1008,8 @@ function App() {
           onSearch={handleSearch}
           onFilterByColor={handleFilterByColor}
           onFilterByType={handleFilterByType}
+          onFilterByFormat={handleFilterByFormat}
+          selectedFormat={selectedFormat}
           onSortChange={handleSortChange}
           selectedCount={selectedFiles.length}
           totalCount={pagination?.total || allFiles.length}
@@ -849,7 +1044,11 @@ function App() {
 
         {/* 主内容区 - 根据视图显示不同内容 */}
         {currentView === 'files' && (
-          <UploadZone onUpload={handleUpload} isUploading={isUploading}>
+          <EnhancedUploadZone 
+            onUpload={handleUpload} 
+            folders={folders}
+            selectedFolder={selectedFolder}
+          >
             <FileGrid
               files={allFiles}
               viewMode={viewMode}
@@ -865,10 +1064,25 @@ function App() {
               pagination={pagination}
               currentPage={currentPage}
               onLoadMore={handleLoadMore}
+              onPageChange={handlePageChange}
               searchQuery={searchQuery}
               thumbnailSize={thumbnailSize}
+              onUpload={() => {
+                // 触发文件选择
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.multiple = true;
+                input.onchange = (e) => {
+                  const files = (e.target as HTMLInputElement).files;
+                  if (files) {
+                    handleUpload(Array.from(files));
+                  }
+                };
+                input.click();
+              }}
+              selectedFolder={selectedFolder}
             />
-          </UploadZone>
+          </EnhancedUploadZone>
         )}
         
         {currentView === 'trash' && (
@@ -911,6 +1125,28 @@ function App() {
           tags={tags}
           onAddTag={(tagId) => api.addTagToFile(previewFile.id, tagId).then(() => loadFiles(1, true))}
           onRemoveTag={(tagId) => api.removeTagFromFile(previewFile.id, tagId).then(() => loadFiles(1, true))}
+          onShare={(fileId) => setShareFileId(fileId)}
+        />
+      )}
+
+      {/* Share Dialog */}
+      {shareFileId && (
+        <ShareDialog
+          isOpen={!!shareFileId}
+          onClose={() => setShareFileId(null)}
+          fileId={shareFileId}
+          fileName={allFiles.find(f => f.id === shareFileId)?.originalName || '文件'}
+          onCreateShare={async (options) => {
+            const result = await api.createShareLink(shareFileId, options);
+            return result;
+          }}
+          onGetShares={async () => {
+            const links = await api.getShareLinks(shareFileId);
+            return links;
+          }}
+          onDeleteShare={async (shareId) => {
+            await api.deleteShareLink(shareId);
+          }}
         />
       )}
 
@@ -939,6 +1175,43 @@ function App() {
           isOpen={showAdminPanel}
           onClose={() => setShowAdminPanel(false)}
           apiBaseUrl={api.baseUrl}
+        />
+      )}
+
+      {/* Batch Action Toolbar */}
+      {currentView === 'files' && (
+        <BatchActionToolbar
+          selectedCount={selectedFiles.length}
+          folders={folders}
+          tags={tags}
+          onDelete={async () => {
+            const confirmed = await confirm({
+              title: '删除文件',
+              message: `确定要删除选中的 ${selectedFiles.length} 个文件吗？`,
+              type: 'danger',
+              confirmText: '删除',
+            });
+            if (confirmed) {
+              await handleDeleteFiles();
+            }
+          }}
+          onMove={handleMoveFiles}
+          onAddTag={handleTagFilesMultiple}
+          onCancel={() => setSelectedFiles([])}
+        />
+      )}
+
+      {/* Onboarding Guide */}
+      {auth.isLoggedIn && (
+        <OnboardingGuide onComplete={() => setShowOnboarding(false)} />
+      )}
+
+      {/* Undo Toast */}
+      {undoToast && (
+        <UndoToast
+          action={undoToast.action}
+          onUndo={undoToast.onUndo}
+          onDismiss={() => setUndoToast(null)}
         />
       )}
     </div>

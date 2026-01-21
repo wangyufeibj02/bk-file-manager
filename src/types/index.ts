@@ -4,6 +4,7 @@ export interface Folder {
   parentId: string | null;
   color: string | null;
   icon: string | null;
+  sortOrder: number;
   isSmartFolder: boolean;
   smartRules: string | null;
   createdAt: string;
@@ -80,7 +81,7 @@ export interface FileFilters {
   rating?: number;
   tagIds?: string[];
   format?: string; // File extension filter (e.g., 'jpg' or 'jpg,png,gif')
-  sortBy?: 'createdAt' | 'name' | 'size' | 'rating';
+  sortBy?: 'createdAt' | 'format' | 'name' | 'size' | 'rating';
   sortOrder?: 'asc' | 'desc';
 }
 

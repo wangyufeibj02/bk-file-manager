@@ -109,6 +109,56 @@ export function VideoPreview({
     };
   }, [isProResLikely]);
 
+  // 键盘控制：空格播放/暂停，左右箭头快进快退
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 忽略在输入框中的按键
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          e.stopPropagation();
+          togglePlay();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          skip(-5);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          skip(5);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          if (videoRef.current) {
+            const newVol = Math.min(1, volume + 0.1);
+            videoRef.current.volume = newVol;
+            setVolume(newVol);
+            setIsMuted(false);
+          }
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          if (videoRef.current) {
+            const newVol = Math.max(0, volume - 0.1);
+            videoRef.current.volume = newVol;
+            setVolume(newVol);
+          }
+          break;
+        case 'KeyM':
+          toggleMute();
+          break;
+        case 'KeyF':
+          toggleFullscreen();
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [volume]);
+
   const togglePlay = () => {
     const video = videoRef.current;
     if (!video) return;

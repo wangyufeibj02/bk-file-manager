@@ -7,6 +7,7 @@ import { VideoThumbnail } from './VideoThumbnail';
 import { SequenceCard } from './SequenceCard';
 import { SequencePlayer } from './SequencePlayer';
 import { detectSequences, SequenceGroup } from '../utils/sequenceDetector';
+import { EmptyState } from './EmptyState';
 
 interface FileGridProps {
   files: FileItem[];
@@ -23,8 +24,11 @@ interface FileGridProps {
   pagination?: Pagination | null;
   currentPage?: number;
   onLoadMore?: () => void; // 加载更多回调（无限滚动）
+  onPageChange?: (page: number) => void; // 跳转到指定页码
   searchQuery?: string; // 用于高亮搜索结果
   thumbnailSize?: number; // 缩略图大小
+  onUpload?: () => void; // 上传回调
+  selectedFolder?: string | null; // 当前选中的文件夹
 }
 
 // 框选状态
@@ -160,10 +164,16 @@ function FileCard({
   isDragging?: boolean;
   thumbnailSize?: number;
 }) {
-  const isImage = file.mimeType.startsWith('image/');
-  const isVideo = file.mimeType.startsWith('video/');
-  const isAudio = file.mimeType.startsWith('audio/');
   const ext = file.originalName.split('.').pop()?.toLowerCase() || '';
+  
+  // 视频扩展名列表（与服务端保持一致）
+  const videoExtensions = ['mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv', 'webm', 'm4v', 'mpg', 'mpeg', '3gp', 'ts', 'mts'];
+  // 音频扩展名列表
+  const audioExtensions = ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'wma', 'aiff'];
+  
+  const isImage = file.mimeType.startsWith('image/');
+  const isVideo = file.mimeType.startsWith('video/') || videoExtensions.includes(ext);
+  const isAudio = file.mimeType.startsWith('audio/') || audioExtensions.includes(ext);
   const is3D = ['obj', 'fbx', 'gltf', 'glb', 'stl', '3ds', 'dae', 'ply'].includes(ext);
 
   const thumbnail = getThumbnailUrl(file);
@@ -197,6 +207,7 @@ function FileCard({
               src={thumbnail} 
               alt={file.originalName}
               className="w-full h-full object-cover"
+              loading="lazy"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = 'none';
               }}
@@ -718,22 +729,62 @@ function PaginationBar({
   );
 }
 
-// 无限滚动加载指示器
-function InfiniteScrollIndicator({ 
+// 分页指示器（底部页码）
+function PaginationIndicator({ 
   loadedCount, 
   totalCount, 
   loadingMore,
   hasMore,
   primaryColor,
+  currentPage,
+  totalPages,
+  onPageChange,
 }: { 
   loadedCount: number;
   totalCount: number;
   loadingMore: boolean;
   hasMore: boolean;
   primaryColor: string;
+  currentPage: number;
+  totalPages: number;
+  onPageChange?: (page: number) => void;
 }) {
   const progress = totalCount > 0 ? (loadedCount / totalCount) * 100 : 0;
   
+  // 生成页码按钮
+  const getPageNumbers = () => {
+    const pages: (number | 'ellipsis')[] = [];
+    const maxVisible = 7; // 最多显示的页码数
+    
+    if (totalPages <= maxVisible) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      // 始终显示第一页
+      pages.push(1);
+      
+      if (currentPage > 3) {
+        pages.push('ellipsis');
+      }
+      
+      // 当前页附近的页码
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+      
+      for (let i = start; i <= end; i++) {
+        if (!pages.includes(i)) pages.push(i);
+      }
+      
+      if (currentPage < totalPages - 2) {
+        pages.push('ellipsis');
+      }
+      
+      // 始终显示最后一页
+      if (!pages.includes(totalPages)) pages.push(totalPages);
+    }
+    
+    return pages;
+  };
+
   return (
     <div 
       className="flex flex-col items-center gap-3 py-4 px-4 border-t"
@@ -758,6 +809,67 @@ function InfiniteScrollIndicator({
         </div>
       </div>
 
+      {/* 分页控件 */}
+      {totalPages > 1 && (
+        <div className="flex items-center gap-1">
+          {/* 上一页 */}
+          <button
+            onClick={() => onPageChange?.(currentPage - 1)}
+            disabled={currentPage <= 1 || loadingMore}
+            className="px-3 py-1.5 text-sm rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ 
+              background: 'rgba(255,255,255,0.1)',
+              color: currentPage > 1 ? primaryColor : 'gray',
+            }}
+          >
+            ‹ 上一页
+          </button>
+
+          {/* 页码按钮 */}
+          <div className="flex items-center gap-1 mx-2">
+            {getPageNumbers().map((page, index) => 
+              page === 'ellipsis' ? (
+                <span key={`ellipsis-${index}`} className="px-2 text-gray-500">...</span>
+              ) : (
+                <button
+                  key={page}
+                  onClick={() => onPageChange?.(page)}
+                  disabled={loadingMore}
+                  className="w-8 h-8 text-sm rounded transition-colors disabled:opacity-40"
+                  style={{ 
+                    background: page === currentPage 
+                      ? primaryColor 
+                      : 'rgba(255,255,255,0.1)',
+                    color: page === currentPage ? '#000' : '#fff',
+                    fontWeight: page === currentPage ? 'bold' : 'normal',
+                  }}
+                >
+                  {page}
+                </button>
+              )
+            )}
+          </div>
+
+          {/* 下一页 */}
+          <button
+            onClick={() => onPageChange?.(currentPage + 1)}
+            disabled={currentPage >= totalPages || loadingMore}
+            className="px-3 py-1.5 text-sm rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ 
+              background: 'rgba(255,255,255,0.1)',
+              color: currentPage < totalPages ? primaryColor : 'gray',
+            }}
+          >
+            下一页 ›
+          </button>
+
+          {/* 页码信息 */}
+          <span className="ml-4 text-sm text-gray-400">
+            第 <span style={{ color: primaryColor }}>{currentPage}</span> / {totalPages} 页
+          </span>
+        </div>
+      )}
+
       {/* 加载状态 */}
       {loadingMore && (
         <div className="flex items-center gap-2 text-sm text-gray-400">
@@ -765,21 +877,14 @@ function InfiniteScrollIndicator({
             className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin"
             style={{ borderColor: primaryColor, borderTopColor: 'transparent' }}
           />
-          <span>加载更多中...</span>
+          <span>加载中...</span>
         </div>
       )}
 
       {/* 已加载全部 */}
-      {!hasMore && !loadingMore && loadedCount > 0 && (
+      {!hasMore && !loadingMore && loadedCount > 0 && totalPages <= 1 && (
         <div className="text-sm text-gray-500">
           ✓ 已加载全部内容
-        </div>
-      )}
-
-      {/* 滚动提示 */}
-      {hasMore && !loadingMore && (
-        <div className="text-sm text-gray-500">
-          ↓ 向下滚动加载更多
         </div>
       )}
     </div>
@@ -801,8 +906,11 @@ export function FileGrid({
   pagination,
   currentPage = 1,
   onLoadMore,
+  onPageChange,
   searchQuery,
   thumbnailSize = 200,
+  onUpload,
+  selectedFolder,
 }: FileGridProps) {
   const primaryColor = userSettings?.primaryColor || '#00ffff';
   const [playingSequence, setPlayingSequence] = useState<SequenceGroup | null>(null);
@@ -981,6 +1089,73 @@ export function FileGrid({
     return cols;
   }, [nonSequenceFiles, viewMode]);
 
+  // 公共滚动处理函数 - 必须在 early return 之前定义
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (!onLoadMore) return;
+    
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    const isNearBottom = scrollTop + clientHeight >= scrollHeight - 200;
+    
+    if (isNearBottom && !loadingMore && pagination && currentPage < pagination.totalPages) {
+      onLoadMore();
+    }
+  }, [onLoadMore, loadingMore, pagination, currentPage]);
+
+  // 用于跟踪是否已经检查过自动加载，避免无限循环
+  const autoLoadCheckedRef = useRef<number>(0); // 存储已检查的文件数量
+  const isAutoLoadingRef = useRef<boolean>(false); // 是否正在自动加载中
+  
+  // 自动加载更多内容，确保填满屏幕（仅在初始加载时执行一次）
+  useEffect(() => {
+    // 如果正在加载、没有分页信息、已经是最后一页、或文件列表为空，则不执行
+    if (!onLoadMore || loadingMore || !pagination || currentPage >= pagination.totalPages || files.length === 0) {
+      isAutoLoadingRef.current = false;
+      return;
+    }
+    
+    // 只在第一页时执行自动加载检查
+    if (currentPage !== 1) {
+      return;
+    }
+    
+    // 如果文件数量没有变化（与上次检查时相同），说明已经检查过，不再重复检查
+    if (autoLoadCheckedRef.current === files.length || isAutoLoadingRef.current) {
+      return;
+    }
+    
+    // 记录当前文件数量
+    autoLoadCheckedRef.current = files.length;
+    
+    // 延迟检查，确保DOM已渲染
+    const timer = setTimeout(() => {
+      if (!containerRef.current || isAutoLoadingRef.current || loadingMore) {
+        return;
+      }
+      
+      const { scrollHeight, clientHeight } = containerRef.current;
+      // 如果内容高度小于容器高度，且还有更多页，则自动加载
+      // 添加100px缓冲，避免频繁触发
+      if (scrollHeight <= clientHeight + 100 && currentPage < pagination.totalPages) {
+        isAutoLoadingRef.current = true;
+        onLoadMore();
+        // 加载更多后，延迟重置标志（等待新数据加载完成）
+        setTimeout(() => {
+          isAutoLoadingRef.current = false;
+        }, 2000);
+      }
+    }, 1000); // 增加延迟，确保内容完全渲染
+    
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [files.length, onLoadMore, loadingMore, pagination, currentPage]);
+  
+  // 当分页信息变化时（如切换文件夹），重置检查标志
+  useEffect(() => {
+    autoLoadCheckedRef.current = 0;
+    isAutoLoadingRef.current = false;
+  }, [pagination?.total]);
+
   if (loading && files.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -992,31 +1167,15 @@ export function FileGrid({
     );
   }
 
-  if (files.length === 0) {
+  if (files.length === 0 && !loading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-eagle-card flex items-center justify-center">
-            <FiFile size={40} className="text-eagle-textSecondary" />
-          </div>
-          <h3 className="text-lg font-medium text-eagle-text mb-2">暂无文件</h3>
-          <p className="text-eagle-textSecondary">拖拽文件到此处上传</p>
-        </div>
-      </div>
+      <EmptyState
+        type={selectedFolder ? 'folder' : searchQuery ? 'search' : 'files'}
+        onUpload={onUpload}
+        searchQuery={searchQuery}
+      />
     );
   }
-
-  // 公共滚动处理函数
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (!onLoadMore) return;
-    
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    const isNearBottom = scrollTop + clientHeight >= scrollHeight - 200;
-    
-    if (isNearBottom && !loadingMore && pagination && currentPage < pagination.totalPages) {
-      onLoadMore();
-    }
-  }, [onLoadMore, loadingMore, pagination, currentPage]);
 
   if (viewMode === 'list') {
     return (
@@ -1057,14 +1216,17 @@ export function FileGrid({
           </div>
         </div>
 
-        {/* 无限滚动加载指示器 */}
+        {/* 分页指示器 */}
         {pagination && (
-          <InfiniteScrollIndicator
+          <PaginationIndicator
             loadedCount={files.length}
             totalCount={pagination.total}
             loadingMore={loadingMore}
             hasMore={currentPage < pagination.totalPages}
             primaryColor={primaryColor}
+            currentPage={currentPage}
+            totalPages={pagination.totalPages}
+            onPageChange={onPageChange}
           />
         )}
 
@@ -1102,14 +1264,17 @@ export function FileGrid({
           </div>
         </div>
 
-        {/* 无限滚动加载指示器 */}
+        {/* 分页指示器 */}
         {pagination && (
-          <InfiniteScrollIndicator
+          <PaginationIndicator
             loadedCount={files.length}
             totalCount={pagination.total}
             loadingMore={loadingMore}
             hasMore={currentPage < pagination.totalPages}
             primaryColor={primaryColor}
+            currentPage={currentPage}
+            totalPages={pagination.totalPages}
+            onPageChange={onPageChange}
           />
         )}
       </div>
@@ -1150,12 +1315,16 @@ export function FileGrid({
               <span className="w-2 h-2 rounded-full bg-apple-accent" />
               序列帧 ({sequences.length} 组)
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div 
+              className="flex flex-wrap gap-4"
+              style={{ justifyContent: 'flex-start' }}
+            >
               {sequences.map(seq => (
                 <SequenceCard
                   key={seq.id}
                   sequence={seq}
                   onClick={() => setPlayingSequence(seq)}
+                  thumbnailSize={thumbnailSize}
                 />
               ))}
             </div>
@@ -1199,14 +1368,17 @@ export function FileGrid({
         )}
       </div>
 
-      {/* 无限滚动加载指示器 */}
+      {/* 分页指示器 */}
       {pagination && (
-        <InfiniteScrollIndicator
+        <PaginationIndicator
           loadedCount={files.length}
           totalCount={pagination.total}
           loadingMore={loadingMore}
           hasMore={currentPage < pagination.totalPages}
           primaryColor={primaryColor}
+          currentPage={currentPage}
+          totalPages={pagination.totalPages}
+          onPageChange={onPageChange}
         />
       )}
 

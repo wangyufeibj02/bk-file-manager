@@ -19,6 +19,55 @@ import { exec } from 'child_process';
 
 const router = Router();
 
+// 缓存所有文件夹关系（优化性能）
+let folderCache: Map<string, string[]> | null = null;
+let folderCacheTime = 0;
+const CACHE_TTL = 30000; // 30秒缓存
+
+// 获取文件夹及其所有子文件夹的 ID（优化版本：单次查询 + 缓存）
+async function getAllChildFolderIds(folderId: string): Promise<string[]> {
+  const now = Date.now();
+  
+  // 检查缓存是否有效
+  if (!folderCache || now - folderCacheTime > CACHE_TTL) {
+    // 一次性获取所有文件夹
+    const allFolders = await prisma.folder.findMany({
+      select: { id: true, parentId: true },
+    });
+    
+    // 构建父子关系映射
+    folderCache = new Map<string, string[]>();
+    for (const folder of allFolders) {
+      if (folder.parentId) {
+        const children = folderCache.get(folder.parentId) || [];
+        children.push(folder.id);
+        folderCache.set(folder.parentId, children);
+      }
+    }
+    folderCacheTime = now;
+  }
+  
+  // 在内存中递归收集子文件夹 ID
+  const result: string[] = [folderId];
+  const stack = [folderId];
+  
+  while (stack.length > 0) {
+    const currentId = stack.pop()!;
+    const children = folderCache.get(currentId) || [];
+    for (const childId of children) {
+      result.push(childId);
+      stack.push(childId);
+    }
+  }
+  
+  return result;
+}
+
+// 清除文件夹缓存（在文件夹变更时调用）
+export function clearFolderCache() {
+  folderCache = null;
+}
+
 // 颜色分类 - 按色相范围定义
 interface ColorCategory {
   name: string;
@@ -127,8 +176,10 @@ router.get('/', validate(fileQuerySchema), async (req, res) => {
 
     const where: Record<string, unknown> = {};
 
+    // 如果指定了文件夹，递归获取该文件夹及其所有子文件夹中的文件
     if (folderId) {
-      where.folderId = folderId;
+      const allFolderIds = await getAllChildFolderIds(String(folderId));
+      where.folderId = { in: allFolderIds };
     }
 
     if (search) {
@@ -201,34 +252,72 @@ router.get('/', validate(fileQuerySchema), async (req, res) => {
     const pageNum = Math.max(1, Number(page) || 1);
     const limitNum = Math.min(200, Math.max(1, Number(limit) || 50));
 
-    // 如果有颜色筛选，需要后处理，所以先获取更多数据
+    // 如果有颜色筛选，需要后处理
     const hasColorFilter = filterColors.length > 0;
 
-    let allFiles = await prisma.file.findMany({
-      where,
-      include: {
-        tags: { include: { tag: true } },
-        folder: true,
-      },
-      orderBy: { [sortBy as string]: sortOrder },
-      take: hasColorFilter ? 1000 : undefined, // 颜色筛选时获取更多
-      skip: hasColorFilter ? 0 : (pageNum - 1) * limitNum,
-    });
+    let files: any[];
+    let total: number;
 
-    // 如果有颜色筛选，进行后处理 - 支持多颜色 OR 匹配
-    if (hasColorFilter) {
-      allFiles = allFiles.filter(f => 
-        f.dominantColor && filterColors.some(fc => colorMatchesCategory(f.dominantColor!, fc))
-      );
+    // 处理格式类型排序（需要按文件扩展名排序）
+    const getFileExtension = (fileName: string): string => {
+      const ext = fileName.split('.').pop()?.toLowerCase() || '';
+      return ext || '';
+    };
+
+    // 如果按格式类型排序，需要获取所有文件后在内存中排序
+    const needsInMemorySort = sortBy === 'format';
+
+    if (hasColorFilter || needsInMemorySort) {
+      // 颜色筛选或格式排序：获取更多数据后内存处理
+      let allFiles = await prisma.file.findMany({
+        where,
+        include: {
+          tags: { include: { tag: true } },
+          folder: true,
+        },
+        // 如果不需要内存排序，使用数据库排序
+        orderBy: needsInMemorySort ? undefined : { [sortBy as string]: sortOrder },
+        take: needsInMemorySort ? 10000 : 1000, // 格式排序需要更多数据
+      });
+
+      // 内存过滤颜色
+      if (hasColorFilter) {
+        allFiles = allFiles.filter(f => 
+          f.dominantColor && filterColors.some(fc => colorMatchesCategory(f.dominantColor!, fc))
+        );
+      }
+
+      // 格式类型排序
+      if (needsInMemorySort) {
+        allFiles.sort((a, b) => {
+          const extA = getFileExtension(a.originalName);
+          const extB = getFileExtension(b.originalName);
+          const comparison = extA.localeCompare(extB);
+          return sortOrder === 'asc' ? comparison : -comparison;
+        });
+      }
+
+      total = allFiles.length;
+      files = allFiles.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+    } else {
+      // 优化：使用事务合并 count 和 findMany，减少数据库往返
+      const [countResult, filesResult] = await prisma.$transaction([
+        prisma.file.count({ where }),
+        prisma.file.findMany({
+          where,
+          include: {
+            tags: { include: { tag: true } },
+            folder: true,
+          },
+          orderBy: { [sortBy as string]: sortOrder },
+          take: limitNum,
+          skip: (pageNum - 1) * limitNum,
+        }),
+      ]);
+
+      total = countResult;
+      files = filesResult;
     }
-
-    // 计算总数和分页
-    const total = hasColorFilter ? allFiles.length : await prisma.file.count({ where });
-    
-    // 如果有颜色筛选，手动分页
-    const files = hasColorFilter 
-      ? allFiles.slice((pageNum - 1) * limitNum, pageNum * limitNum)
-      : allFiles;
 
     res.json({
       files,
@@ -703,6 +792,109 @@ router.get('/:id/exists', async (req, res) => {
   } catch (error) {
     console.error('检查文件存在错误:', error);
     res.status(500).json({ error: '检查失败' });
+  }
+});
+
+// 重新生成视频缩略图
+router.post('/regenerate-thumbnails', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    // 导入必要的模块
+    const ffmpeg = (await import('fluent-ffmpeg')).default;
+    const ffmpegStatic = (await import('ffmpeg-static')).default;
+    const ffprobeStatic = (await import('ffprobe-static')).default;
+    
+    // 配置 ffmpeg 路径
+    if (ffmpegStatic) {
+      ffmpeg.setFfmpegPath(ffmpegStatic);
+    }
+    ffmpeg.setFfprobePath(ffprobeStatic.path);
+    
+    const THUMBNAILS_DIR = path.join(process.cwd(), 'thumbnails');
+    if (!fs.existsSync(THUMBNAILS_DIR)) {
+      fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
+    }
+    
+    // 获取所有没有缩略图的视频文件
+    const videoFiles = await prisma.file.findMany({
+      where: {
+        OR: [
+          { mimeType: { startsWith: 'video/' } },
+          { path: { endsWith: '.mp4' } },
+          { path: { endsWith: '.mov' } },
+          { path: { endsWith: '.avi' } },
+          { path: { endsWith: '.mkv' } },
+          { path: { endsWith: '.webm' } },
+        ],
+        thumbnailPath: null,
+      },
+      select: {
+        id: true,
+        path: true,
+        originalName: true,
+      },
+    });
+    
+    if (videoFiles.length === 0) {
+      return res.json({ success: true, message: '没有需要生成缩略图的视频', processed: 0 });
+    }
+    
+    let processed = 0;
+    let errors = 0;
+    
+    // 为每个视频生成缩略图
+    for (const file of videoFiles) {
+      try {
+        const videoPath = file.path;
+        
+        // 检查文件是否存在
+        if (!fs.existsSync(videoPath)) {
+          console.log(`视频文件不存在: ${videoPath}`);
+          errors++;
+          continue;
+        }
+        
+        const thumbnailName = `thumb_${Date.now()}_${path.parse(file.originalName).name}.jpg`;
+        const thumbnailFullPath = path.join(THUMBNAILS_DIR, thumbnailName);
+        
+        // 生成缩略图
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg(videoPath)
+            .on('end', () => resolve())
+            .on('error', (err) => reject(err))
+            .screenshots({
+              timestamps: ['00:00:01'],
+              filename: thumbnailName,
+              folder: THUMBNAILS_DIR,
+              size: '320x?'
+            });
+        });
+        
+        // 更新数据库
+        await prisma.file.update({
+          where: { id: file.id },
+          data: { thumbnailPath: `/thumbnails/${thumbnailName}` },
+        });
+        
+        processed++;
+        console.log(`生成缩略图成功: ${file.originalName}`);
+        
+      } catch (err) {
+        console.error(`生成缩略图失败: ${file.originalName}`, err);
+        errors++;
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `处理完成: ${processed} 个成功, ${errors} 个失败`,
+      total: videoFiles.length,
+      processed,
+      errors,
+    });
+    
+  } catch (error) {
+    console.error('重新生成缩略图错误:', error);
+    res.status(500).json({ error: '生成缩略图失败', details: error instanceof Error ? error.message : String(error) });
   }
 });
 

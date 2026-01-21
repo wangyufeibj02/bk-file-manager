@@ -12,6 +12,8 @@ dist/
 # Database
 prisma/dev.db
 prisma/dev.db-journal
+prisma/dev.db-shm
+prisma/dev.db-wal
 
 # Uploaded files and thumbnails
 uploads/
@@ -33,3 +35,8 @@ npm-debug.log*
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Temporary files
+temp-*.json
+test-*.json
+regenerate.json

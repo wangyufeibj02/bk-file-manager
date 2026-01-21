@@ -9,7 +9,8 @@ import {
   FiTrash2,
   FiZoomIn,
   FiZoomOut,
-  FiMaximize2
+  FiMaximize2,
+  FiShare2
 } from 'react-icons/fi';
 import { FileItem, Tag } from '../types';
 import { getFileUrl } from '../utils/filePath';
@@ -30,6 +31,7 @@ interface FilePreviewProps {
   tags: Tag[];
   onAddTag: (tagId: string) => void;
   onRemoveTag: (tagId: string) => void;
+  onShare?: (fileId: string) => void;
 }
 
 function formatFileSize(bytes: number): string {
@@ -116,6 +118,7 @@ export function FilePreview({
   tags,
   onAddTag,
   onRemoveTag,
+  onShare,
 }: FilePreviewProps) {
   const [zoom, setZoom] = useState(1);
   const [showTagPicker, setShowTagPicker] = useState(false);
@@ -142,8 +145,11 @@ export function FilePreview({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
-      if (e.key === 'ArrowLeft') navigate('prev');
-      if (e.key === 'ArrowRight') navigate('next');
+      // 视频预览时，箭头键由视频组件处理
+      if (fileType !== 'video') {
+        if (e.key === 'ArrowLeft') navigate('prev');
+        if (e.key === 'ArrowRight') navigate('next');
+      }
       if (e.key === '+' || e.key === '=') setZoom(z => Math.min(z + 0.25, 3));
       if (e.key === '-') setZoom(z => Math.max(z - 0.25, 0.5));
       if (e.key === '0') setZoom(1);
@@ -151,7 +157,7 @@ export function FilePreview({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, navigate]);
+  }, [onClose, navigate, fileType]);
 
   const fileTags = file.tags.map(ft => ft.tag);
   const availableTags = tags.filter(t => !fileTags.some(ft => ft.id === t.id));
@@ -406,19 +412,43 @@ export function FilePreview({
     >
       {/* 快捷键提示 */}
       <div className="absolute top-4 left-4 z-50 flex items-center gap-4 text-white/40 text-xs">
+        {fileType === 'video' ? (
+          <>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded">Space</kbd>
+              播放/暂停
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded">←</kbd>
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded">→</kbd>
+              快退/快进
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded">M</kbd>
+              静音
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded">F</kbd>
+              全屏
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded">←</kbd>
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded">→</kbd>
+              切换
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded">+</kbd>
+              <kbd className="px-1.5 py-0.5 bg-white/10 rounded">-</kbd>
+              缩放
+            </span>
+          </>
+        )}
         <span className="flex items-center gap-1">
-          <kbd className="px-1.5 py-0.5 bg-white/10 rounded">Space</kbd>
+          <kbd className="px-1.5 py-0.5 bg-white/10 rounded">Esc</kbd>
           关闭
-        </span>
-        <span className="flex items-center gap-1">
-          <kbd className="px-1.5 py-0.5 bg-white/10 rounded">←</kbd>
-          <kbd className="px-1.5 py-0.5 bg-white/10 rounded">→</kbd>
-          切换
-        </span>
-        <span className="flex items-center gap-1">
-          <kbd className="px-1.5 py-0.5 bg-white/10 rounded">+</kbd>
-          <kbd className="px-1.5 py-0.5 bg-white/10 rounded">-</kbd>
-          缩放
         </span>
       </div>
 
@@ -643,6 +673,15 @@ export function FilePreview({
             <FiDownload size={16} />
             <span>下载</span>
           </a>
+          {onShare && (
+            <button
+              onClick={() => onShare(file.id)}
+              className="p-2 bg-eagle-hover hover:bg-cyan-500/20 text-eagle-textSecondary hover:text-cyan-400 rounded-lg transition-colors"
+              title="分享"
+            >
+              <FiShare2 size={16} />
+            </button>
+          )}
           <button className="p-2 bg-eagle-hover hover:bg-eagle-danger/20 text-eagle-textSecondary hover:text-eagle-danger rounded-lg transition-colors">
             <FiTrash2 size={16} />
           </button>

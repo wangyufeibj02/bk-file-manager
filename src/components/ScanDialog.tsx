@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { FiFolder, FiX, FiSearch, FiCheck, FiAlertCircle } from 'react-icons/fi';
+import { useState, useEffect, useRef } from 'react';
+import { FiFolder, FiX, FiSearch, FiCheck, FiAlertCircle, FiClock, FiZap, FiFile } from 'react-icons/fi';
 
 interface ScanPreview {
   path: string;
@@ -14,6 +14,29 @@ interface ScanResult {
   success: boolean;
   message: string;
   result: {
+    totalFiles: number;
+    folders: number;
+    fileTypes: Record<string, number>;
+    errors: string[];
+  };
+}
+
+interface ScanProgress {
+  phase: 'counting' | 'scanning' | 'complete';
+  currentFile?: string;
+  processedFiles?: number;
+  totalFiles?: number;
+  processedFolders?: number;
+  progress?: number;
+  speed?: number; // 文件/秒
+  elapsedTime?: number; // 毫秒
+  remainingTime?: number; // 毫秒
+  fileTypes?: Record<string, number>;
+  errorsCount?: number;
+  message?: string;
+  success?: boolean;
+  error?: string;
+  result?: {
     totalFiles: number;
     folders: number;
     fileTypes: Record<string, number>;
@@ -37,11 +60,22 @@ function formatFileSize(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
+function formatTime(ms: number): string {
+  if (ms <= 0) return '--';
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}秒`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return `${minutes}分${remainingSeconds}秒`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}时${remainingMinutes}分`;
+}
+
 export function ScanDialog({
   isOpen,
   onClose,
   onScanPreview,
-  onScanDirectory,
   onScanComplete,
 }: ScanDialogProps) {
   const [directoryPath, setDirectoryPath] = useState('');
@@ -51,6 +85,17 @@ export function ScanDialog({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [createRootFolder, setCreateRootFolder] = useState(true);
+  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+
+  // 清理 EventSource
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
 
   const handlePreview = async () => {
     if (!directoryPath.trim()) return;
@@ -74,23 +119,64 @@ export function ScanDialog({
     
     setScanning(true);
     setError(null);
+    setScanProgress({ phase: 'counting', message: '准备扫描...' });
     
-    try {
-      const data = await onScanDirectory(directoryPath.trim(), createRootFolder);
-      setResult(data);
-      onScanComplete();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '扫描失败');
-    } finally {
+    // 使用 SSE 获取实时进度
+    const params = new URLSearchParams({
+      path: directoryPath.trim(),
+      createRootFolder: String(createRootFolder),
+    });
+    
+    const eventSource = new EventSource(`/api/scan/directory-sse?${params}`);
+    eventSourceRef.current = eventSource;
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data: ScanProgress = JSON.parse(event.data);
+        setScanProgress(data);
+        
+        if (data.phase === 'complete') {
+          eventSource.close();
+          eventSourceRef.current = null;
+          setScanning(false);
+          
+          if (data.success && data.result) {
+            setResult({
+              success: true,
+              message: data.message || '扫描完成',
+              result: data.result,
+            });
+            onScanComplete();
+          } else if (data.error) {
+            setError(data.error);
+          }
+        }
+      } catch (err) {
+        console.error('Parse SSE error:', err);
+      }
+    };
+    
+    eventSource.onerror = (err) => {
+      console.error('SSE error:', err);
+      eventSource.close();
+      eventSourceRef.current = null;
       setScanning(false);
-    }
+      setError('扫描连接中断，请重试');
+    };
   };
 
   const handleClose = () => {
+    // 关闭 SSE 连接
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
     setDirectoryPath('');
     setPreview(null);
     setError(null);
     setResult(null);
+    setScanProgress(null);
+    setScanning(false);
     onClose();
   };
 
@@ -133,10 +219,11 @@ export function ScanDialog({
                 placeholder="例如: D:\Projects\Images 或 C:\Users\Documents"
                 className="flex-1 px-4 py-3 bg-eagle-bg border border-eagle-border rounded-lg text-eagle-text placeholder-eagle-textSecondary focus:outline-none focus:border-eagle-accent transition-colors"
                 onKeyDown={(e) => e.key === 'Enter' && handlePreview()}
+                disabled={scanning}
               />
               <button
                 onClick={handlePreview}
-                disabled={loading || !directoryPath.trim()}
+                disabled={loading || scanning || !directoryPath.trim()}
                 className="px-4 py-3 bg-eagle-hover hover:bg-eagle-border text-eagle-text rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <FiSearch size={18} />
@@ -153,6 +240,7 @@ export function ScanDialog({
                 checked={createRootFolder}
                 onChange={(e) => setCreateRootFolder(e.target.checked)}
                 className="w-5 h-5 rounded border-eagle-border bg-eagle-bg checked:bg-eagle-accent"
+                disabled={scanning}
               />
               <span className="text-sm text-eagle-text">创建根文件夹（以扫描目录名命名）</span>
             </label>
@@ -173,8 +261,113 @@ export function ScanDialog({
             </div>
           )}
 
+          {/* Scanning Progress */}
+          {scanning && scanProgress && (
+            <div className="space-y-4">
+              <div className="p-6 bg-eagle-bg rounded-lg">
+                {/* 进度条 */}
+                <div className="mb-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-eagle-text">
+                      {scanProgress.phase === 'counting' ? '统计文件数量...' : '扫描中...'}
+                    </span>
+                    <span className="text-sm text-eagle-accent font-bold">
+                      {scanProgress.progress ?? 0}%
+                    </span>
+                  </div>
+                  <div className="h-3 bg-eagle-border rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-eagle-accent to-cyan-400 rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${scanProgress.progress ?? 0}%` }}
+                    />
+                  </div>
+                </div>
+                
+                {/* 当前文件 */}
+                {scanProgress.currentFile && (
+                  <div className="flex items-center gap-2 mb-4 p-3 bg-eagle-hover rounded-lg">
+                    <FiFile size={16} className="text-eagle-textSecondary flex-shrink-0" />
+                    <span className="text-sm text-eagle-textSecondary truncate">
+                      {scanProgress.currentFile}
+                    </span>
+                  </div>
+                )}
+                
+                {/* 统计信息 */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {/* 已处理/总数 */}
+                  <div className="text-center p-3 bg-eagle-hover rounded-lg">
+                    <div className="text-xl font-bold text-eagle-text">
+                      {scanProgress.processedFiles ?? 0}
+                      <span className="text-sm text-eagle-textSecondary">/{scanProgress.totalFiles ?? 0}</span>
+                    </div>
+                    <div className="text-xs text-eagle-textSecondary mt-1">文件</div>
+                  </div>
+                  
+                  {/* 扫描速度 */}
+                  <div className="text-center p-3 bg-eagle-hover rounded-lg">
+                    <div className="flex items-center justify-center gap-1">
+                      <FiZap size={16} className="text-yellow-400" />
+                      <span className="text-xl font-bold text-eagle-text">
+                        {scanProgress.speed?.toFixed(1) ?? '0'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-eagle-textSecondary mt-1">文件/秒</div>
+                  </div>
+                  
+                  {/* 已用时间 */}
+                  <div className="text-center p-3 bg-eagle-hover rounded-lg">
+                    <div className="flex items-center justify-center gap-1">
+                      <FiClock size={16} className="text-blue-400" />
+                      <span className="text-xl font-bold text-eagle-text">
+                        {formatTime(scanProgress.elapsedTime ?? 0)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-eagle-textSecondary mt-1">已用时间</div>
+                  </div>
+                  
+                  {/* 剩余时间 */}
+                  <div className="text-center p-3 bg-eagle-hover rounded-lg">
+                    <div className="flex items-center justify-center gap-1">
+                      <FiClock size={16} className="text-green-400" />
+                      <span className="text-xl font-bold text-eagle-text">
+                        {formatTime(scanProgress.remainingTime ?? 0)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-eagle-textSecondary mt-1">剩余时间</div>
+                  </div>
+                </div>
+                
+                {/* 文件类型统计 */}
+                {scanProgress.fileTypes && Object.keys(scanProgress.fileTypes).length > 0 && (
+                  <div className="mt-4">
+                    <div className="text-xs text-eagle-textSecondary mb-2">已扫描文件类型</div>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(scanProgress.fileTypes).slice(0, 8).map(([type, count]) => (
+                        <div
+                          key={type}
+                          className="px-2 py-1 bg-eagle-border rounded text-xs"
+                        >
+                          <span className="text-eagle-text">{type}</span>
+                          <span className="text-eagle-textSecondary ml-1">{count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* 错误数量 */}
+                {(scanProgress.errorsCount ?? 0) > 0 && (
+                  <div className="mt-3 text-xs text-yellow-400">
+                    ⚠️ {scanProgress.errorsCount} 个文件处理失败
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Preview */}
-          {preview && !result && (
+          {preview && !result && !scanning && (
             <div className="space-y-4">
               <div className="p-4 bg-eagle-bg rounded-lg">
                 <h3 className="text-sm font-medium text-eagle-textSecondary mb-3">文件夹信息</h3>
@@ -245,6 +438,11 @@ export function ScanDialog({
                 </div>
                 <h3 className="text-lg font-semibold text-green-400 mb-2">扫描完成！</h3>
                 <p className="text-eagle-textSecondary">{result.message}</p>
+                {scanProgress?.elapsedTime && (
+                  <p className="text-sm text-eagle-textSecondary mt-2">
+                    耗时: {formatTime(scanProgress.elapsedTime)}
+                  </p>
+                )}
               </div>
 
               <div className="p-4 bg-eagle-bg rounded-lg">
@@ -297,25 +495,16 @@ export function ScanDialog({
             onClick={handleClose}
             className="px-4 py-2 text-eagle-textSecondary hover:text-eagle-text transition-colors"
           >
-            {result ? '完成' : '取消'}
+            {result ? '完成' : scanning ? '取消' : '关闭'}
           </button>
-          {preview && !result && (
+          {preview && !result && !scanning && (
             <button
               onClick={handleScan}
               disabled={scanning}
               className="px-6 py-2 bg-eagle-accent hover:bg-eagle-accentHover text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              {scanning ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  扫描中...
-                </>
-              ) : (
-                <>
-                  <FiFolder size={18} />
-                  开始扫描
-                </>
-              )}
+              <FiFolder size={18} />
+              开始扫描
             </button>
           )}
         </div>

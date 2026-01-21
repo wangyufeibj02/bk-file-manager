@@ -1,4 +1,4 @@
-import { useState, useEffect, memo, useCallback } from 'react';
+import { useState, memo, useRef } from 'react';
 import { 
   FiFolder, 
   FiChevronRight, 
@@ -6,27 +6,17 @@ import {
   FiPlus, 
   FiTrash2,
   FiTag,
-  FiImage,
-  FiVideo,
-  FiMusic,
   FiFile,
   FiHome,
   FiClock,
   FiHardDrive,
-  FiBox,
-  FiTool,
   FiUser,
   FiSettings,
   FiUsers,
   FiZap,
   FiX,
-  FiFilter,
-  FiRotateCcw,
   FiEdit3,
-  FiMove,
-  FiEye,
-  FiStar,
-  FiRefreshCw
+  FiMove
 } from 'react-icons/fi';
 import { Folder, Tag, User, UserSettings, HistoryRecord, TrashItem, HistoryAction } from '../types';
 
@@ -83,110 +73,6 @@ const formatSize = (bytes: number) => {
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
 };
 
-// 文件格式分类（详细版，包含每个格式）
-const FILE_CATEGORIES = {
-  images: {
-    name: '图片',
-    icon: FiImage,
-    color: '#22c55e',
-    formats: [
-      { ext: 'jpg,jpeg', name: 'JPEG', desc: '通用压缩图片' },
-      { ext: 'png', name: 'PNG', desc: '无损透明图片' },
-      { ext: 'apng', name: 'APNG', desc: '动态PNG图片' },
-      { ext: 'gif', name: 'GIF', desc: '动图/简单动画' },
-      { ext: 'webp', name: 'WebP', desc: '现代网页格式' },
-      { ext: 'svg', name: 'SVG', desc: '矢量图形' },
-      { ext: 'bmp', name: 'BMP', desc: '位图格式' },
-      { ext: 'psd', name: 'PSD', desc: 'Photoshop文件' },
-      { ext: 'ai', name: 'AI', desc: 'Illustrator文件' },
-      { ext: 'raw,cr2,nef,arw,dng', name: 'RAW', desc: '相机原始格式' },
-      { ext: 'tiff,tif', name: 'TIFF', desc: '高质量图片' },
-      { ext: 'ico', name: 'ICO', desc: '图标文件' },
-    ]
-  },
-  videos: {
-    name: '视频',
-    icon: FiVideo,
-    color: '#3b82f6',
-    formats: [
-      { ext: 'mp4', name: 'MP4', desc: 'H.264/H.265' },
-      { ext: 'mov', name: 'MOV', desc: 'QuickTime' },
-      { ext: 'avi', name: 'AVI', desc: 'Windows视频' },
-      { ext: 'mkv', name: 'MKV', desc: 'Matroska' },
-      { ext: 'wmv', name: 'WMV', desc: 'Windows Media' },
-      { ext: 'flv', name: 'FLV', desc: 'Flash视频' },
-      { ext: 'webm', name: 'WebM', desc: '网页视频' },
-      { ext: 'm4v', name: 'M4V', desc: 'iTunes视频' },
-      { ext: 'mpg,mpeg', name: 'MPEG', desc: 'MPEG视频' },
-      { ext: '3gp', name: '3GP', desc: '手机视频' },
-    ]
-  },
-  audios: {
-    name: '音频',
-    icon: FiMusic,
-    color: '#a855f7',
-    formats: [
-      { ext: 'mp3', name: 'MP3', desc: '通用音频' },
-      { ext: 'wav', name: 'WAV', desc: '无损音频' },
-      { ext: 'ogg', name: 'OGG', desc: 'Vorbis音频' },
-      { ext: 'flac', name: 'FLAC', desc: '无损压缩' },
-      { ext: 'm4a', name: 'M4A', desc: 'AAC音频' },
-      { ext: 'aac', name: 'AAC', desc: '高级音频' },
-      { ext: 'wma', name: 'WMA', desc: 'Windows音频' },
-      { ext: 'aiff,aif', name: 'AIFF', desc: 'Apple无损' },
-    ]
-  },
-  documents: {
-    name: '文档',
-    icon: FiFile,
-    color: '#f97316',
-    formats: [
-      { ext: 'pdf', name: 'PDF', desc: '便携文档' },
-      { ext: 'doc,docx', name: 'Word', desc: 'Word文档' },
-      { ext: 'xls,xlsx', name: 'Excel', desc: '电子表格' },
-      { ext: 'ppt,pptx', name: 'PPT', desc: '演示文稿' },
-      { ext: 'txt', name: 'TXT', desc: '纯文本' },
-      { ext: 'rtf', name: 'RTF', desc: '富文本' },
-      { ext: 'md', name: 'Markdown', desc: 'MD文档' },
-      { ext: 'csv', name: 'CSV', desc: '表格数据' },
-      { ext: 'json', name: 'JSON', desc: '数据文件' },
-      { ext: 'xml', name: 'XML', desc: '标记语言' },
-    ]
-  },
-  models3d: {
-    name: '3D模型',
-    icon: FiBox,
-    color: '#06b6d4',
-    formats: [
-      { ext: 'obj', name: 'OBJ', desc: '通用3D格式' },
-      { ext: 'fbx', name: 'FBX', desc: 'Autodesk交换' },
-      { ext: 'gltf,glb', name: 'glTF', desc: 'Web 3D格式' },
-      { ext: 'stl', name: 'STL', desc: '3D打印' },
-      { ext: 'blend', name: 'Blend', desc: 'Blender文件' },
-      { ext: 'dae', name: 'DAE', desc: 'Collada格式' },
-      { ext: '3ds', name: '3DS', desc: '3DS Max' },
-      { ext: 'ply', name: 'PLY', desc: '点云数据' },
-    ]
-  },
-  projects: {
-    name: '工程',
-    icon: FiTool,
-    color: '#ec4899',
-    formats: [
-      { ext: 'psd', name: 'PSD', desc: 'Photoshop工程' },
-      { ext: 'ai', name: 'AI', desc: 'Illustrator工程' },
-      { ext: 'aep', name: 'AEP', desc: 'After Effects' },
-      { ext: 'prproj', name: 'Premiere', desc: 'Premiere Pro' },
-      { ext: 'blend', name: 'Blend', desc: 'Blender工程' },
-      { ext: 'c4d', name: 'C4D', desc: 'Cinema 4D' },
-      { ext: 'max', name: '3DS Max', desc: '3DS Max工程' },
-      { ext: 'ma,mb', name: 'Maya', desc: 'Maya工程' },
-      { ext: 'skp', name: 'SketchUp', desc: 'SketchUp工程' },
-      { ext: 'dwg,dxf', name: 'CAD', desc: 'AutoCAD文件' },
-    ]
-  }
-};
-
 interface SidebarProps {
   folders: Folder[];
   tags: Tag[];
@@ -195,6 +81,7 @@ interface SidebarProps {
   onCreateFolder: (name: string, parentId?: string) => void;
   onDeleteFolder: (folderId: string) => void;
   onRenameFolder?: (folderId: string, newName: string) => void;
+  onMoveFolder?: (folderId: string, targetParentId: string | null, sortOrder?: number) => void;
   onCreateTag: (name: string, color?: string) => void;
   onDeleteTag?: (tagId: string) => void;
   onFilterByTag: (tagIds: string[]) => void;
@@ -227,6 +114,7 @@ export const Sidebar = memo(function Sidebar({
   onCreateFolder,
   onDeleteFolder,
   onRenameFolder,
+  onMoveFolder,
   onCreateTag,
   onDeleteTag,
   onFilterByTag,
@@ -248,9 +136,9 @@ export const Sidebar = memo(function Sidebar({
   currentView = 'files',
   onViewChange,
 }: SidebarProps) {
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['folders', 'types']));
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['folders']));
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [expandedAllFiles, setExpandedAllFiles] = useState<boolean>(true); // 默认展开"全部文件"的文件夹列表
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [newFolderName, setNewFolderName] = useState('');
   const [showNewFolder, setShowNewFolder] = useState(false);
@@ -258,39 +146,30 @@ export const Sidebar = memo(function Sidebar({
   const [showNewTag, setShowNewTag] = useState(false);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState('');
-
-  // 切换类型分类展开
-  const toggleCategory = (key: string) => {
-    setExpandedCategories(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  // 获取类型的所有格式扩展名
-  const getCategoryExts = (cat: typeof FILE_CATEGORIES[keyof typeof FILE_CATEGORIES]) => {
-    return cat.formats.map(f => f.ext).join(',');
-  };
-
-  // 检查某个格式是否被选中
-  const isFormatSelected = (ext: string) => {
-    if (!selectedFormat) return false;
-    const selectedExts = selectedFormat.split(',').map(e => e.toLowerCase().trim());
-    const formatExts = ext.split(',').map(e => e.toLowerCase().trim());
-    return formatExts.some(e => selectedExts.includes(e));
-  };
-
-  // 检查某个分类是否被选中（全部或部分）
-  const isCategorySelected = (cat: typeof FILE_CATEGORIES[keyof typeof FILE_CATEGORIES]) => {
-    if (!selectedFormat) return false;
-    const allExts = getCategoryExts(cat);
-    return selectedFormat === allExts;
-  };
+  
+  // 拖拽状态
+  const [draggedFolder, setDraggedFolder] = useState<Folder | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+  const [dragOverPosition, setDragOverPosition] = useState<'before' | 'inside' | 'after' | null>(null);
+  const dragCounterRef = useRef(0);
 
   const primaryColor = userSettings?.primaryColor || '#00ffff';
   const secondaryColor = userSettings?.secondaryColor || '#ff00ff';
+  
+  // 将hex颜色转换为rgba格式（用于滚动条）
+  const hexToRgba = (hex: string, alpha: number) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+  
+  const scrollbarPrimary40 = hexToRgba(primaryColor, 0.4);
+  const scrollbarSecondary40 = hexToRgba(secondaryColor, 0.4);
+  const scrollbarPrimary60 = hexToRgba(primaryColor, 0.6);
+  const scrollbarSecondary60 = hexToRgba(secondaryColor, 0.6);
+  const scrollbarPrimary80 = hexToRgba(primaryColor, 0.8);
+  const scrollbarSecondary80 = hexToRgba(secondaryColor, 0.8);
 
   const toggleSection = (section: string) => {
     setExpandedSections(prev => {
@@ -316,12 +195,6 @@ export const Sidebar = memo(function Sidebar({
       : [...selectedTags, tagId];
     setSelectedTags(newSelected);
     onFilterByTag(newSelected);
-  };
-
-  const handleCategoryClick = (exts: string) => {
-    if (onFilterByFormat) {
-      onFilterByFormat(selectedFormat === exts ? null : exts);
-    }
   };
 
   const handleCreateFolder = () => {
@@ -361,19 +234,158 @@ export const Sidebar = memo(function Sidebar({
     setEditingFolderName('');
   };
 
-  const renderFolder = (folder: Folder, depth = 0) => {
+  // 拖拽处理函数
+  const handleDragStart = (e: React.DragEvent, folder: Folder) => {
+    e.stopPropagation();
+    setDraggedFolder(folder);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', folder.id);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedFolder(null);
+    setDragOverFolder(null);
+    setDragOverPosition(null);
+    dragCounterRef.current = 0;
+  };
+
+  const handleDragEnter = (e: React.DragEvent, folderId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (draggedFolder && draggedFolder.id !== folderId) {
+      setDragOverFolder(folderId);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) {
+      setDragOverFolder(null);
+      setDragOverPosition(null);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent, folder: Folder) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!draggedFolder || draggedFolder.id === folder.id) return;
+    
+    // 检查是否拖到自己的子文件夹下
+    const isDescendant = (parent: Folder, targetId: string): boolean => {
+      if (!parent.children) return false;
+      for (const child of parent.children) {
+        if (child.id === targetId) return true;
+        if (isDescendant(child, targetId)) return true;
+      }
+      return false;
+    };
+    
+    if (isDescendant(draggedFolder, folder.id)) {
+      e.dataTransfer.dropEffect = 'none';
+      return;
+    }
+    
+    e.dataTransfer.dropEffect = 'move';
+    
+    // 根据鼠标位置确定放置位置
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const height = rect.height;
+    
+    if (y < height * 0.25) {
+      setDragOverPosition('before');
+    } else if (y > height * 0.75) {
+      setDragOverPosition('after');
+    } else {
+      setDragOverPosition('inside');
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, targetFolder: Folder, parentId: string | null) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!draggedFolder || draggedFolder.id === targetFolder.id || !onMoveFolder) {
+      handleDragEnd();
+      return;
+    }
+    
+    // 检查是否拖到自己的子文件夹下
+    const isDescendant = (parent: Folder, targetId: string): boolean => {
+      if (!parent.children) return false;
+      for (const child of parent.children) {
+        if (child.id === targetId) return true;
+        if (isDescendant(child, targetId)) return true;
+      }
+      return false;
+    };
+    
+    if (isDescendant(draggedFolder, targetFolder.id)) {
+      handleDragEnd();
+      return;
+    }
+    
+    if (dragOverPosition === 'inside') {
+      // 移动到目标文件夹内部
+      onMoveFolder(draggedFolder.id, targetFolder.id);
+    } else {
+      // 移动到目标文件夹的同级
+      const newSortOrder = dragOverPosition === 'before' 
+        ? (targetFolder.sortOrder ?? 0) 
+        : (targetFolder.sortOrder ?? 0) + 1;
+      onMoveFolder(draggedFolder.id, parentId, newSortOrder);
+    }
+    
+    handleDragEnd();
+  };
+
+  const renderFolder = (folder: Folder, depth = 0, parentId: string | null = null) => {
     const hasChildren = folder.children && folder.children.length > 0;
     const isExpanded = expandedFolders.has(folder.id);
     const isSelected = selectedFolder === folder.id;
     const isEditing = editingFolderId === folder.id;
+    const isDragging = draggedFolder?.id === folder.id;
+    const isDragOver = dragOverFolder === folder.id;
 
     return (
-      <div key={folder.id}>
+      <div key={folder.id} className="relative">
+        {/* 拖拽指示器 - 上方 */}
+        {isDragOver && dragOverPosition === 'before' && (
+          <div 
+            className="absolute left-0 right-0 h-0.5 z-10"
+            style={{ 
+              top: 0,
+              marginLeft: `${depth * 12}px`,
+              background: primaryColor,
+            }}
+          />
+        )}
+        
         <div
-          className="group flex items-center gap-1.5 px-2 py-1.5 cursor-pointer transition-all rounded-md mx-1"
+          draggable={!isEditing && !!onMoveFolder}
+          onDragStart={(e) => handleDragStart(e, folder)}
+          onDragEnd={handleDragEnd}
+          onDragEnter={(e) => handleDragEnter(e, folder.id)}
+          onDragLeave={handleDragLeave}
+          onDragOver={(e) => handleDragOver(e, folder)}
+          onDrop={(e) => handleDrop(e, folder, parentId)}
+          className={`group flex items-center gap-1 px-2 py-1 cursor-pointer transition-all rounded-md ${
+            isDragging ? 'opacity-40' : 'hover:bg-white/5'
+          }`}
           style={{ 
-            marginLeft: `${4 + depth * 12}px`,
-            background: isSelected ? `${primaryColor}15` : 'transparent',
+            marginLeft: `${depth * 12}px`,
+            background: isDragOver && dragOverPosition === 'inside' 
+              ? `${primaryColor}25` 
+              : isSelected 
+                ? `${primaryColor}15` 
+                : 'transparent',
+            border: isDragOver && dragOverPosition === 'inside' 
+              ? `1px dashed ${primaryColor}` 
+              : '1px solid transparent',
           }}
           onClick={() => !isEditing && onFolderSelect(folder.id)}
         >
@@ -383,14 +395,14 @@ export const Sidebar = memo(function Sidebar({
               className="p-0.5 rounded hover:bg-white/10"
             >
               {isExpanded ? 
-                <FiChevronDown size={12} style={{ color: primaryColor }} /> : 
-                <FiChevronRight size={12} className="text-gray-500" />
+                <FiChevronDown size={10} style={{ color: primaryColor }} /> : 
+                <FiChevronRight size={10} className="text-gray-500" />
               }
             </button>
           ) : (
-            <span className="w-4" />
+            <span className="w-3" />
           )}
-          <FiFolder size={14} style={{ color: isSelected ? primaryColor : (folder.color || '#666') }} />
+          <FiFolder size={12} style={{ color: isSelected ? primaryColor : (folder.color || '#666') }} />
           
           {isEditing ? (
             <input
@@ -403,13 +415,13 @@ export const Sidebar = memo(function Sidebar({
               }}
               onBlur={() => handleSaveFolder(folder.id)}
               onClick={(e) => e.stopPropagation()}
-              className="flex-1 px-1 py-0.5 bg-black/40 border border-white/20 rounded text-sm text-white focus:outline-none focus:border-cyan-500"
+              className="flex-1 px-1 py-0.5 bg-black/40 border border-white/20 rounded text-xs text-white focus:outline-none focus:border-cyan-500"
               autoFocus
             />
           ) : (
             <span 
-              className="flex-1 truncate text-sm"
-              style={{ color: isSelected ? primaryColor : '#ccc' }}
+              className="flex-1 truncate text-xs"
+              style={{ color: isSelected ? primaryColor : '#aaa' }}
               onDoubleClick={(e) => handleStartEditFolder(e, folder)}
             >
               {folder.name}
@@ -424,25 +436,38 @@ export const Sidebar = memo(function Sidebar({
             <>
               <button
                 onClick={(e) => handleStartEditFolder(e, folder)}
-                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 transition-all"
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white/10 transition-all"
                 title="重命名"
               >
-                <FiEdit3 size={11} style={{ color: primaryColor }} />
+                <FiEdit3 size={10} style={{ color: primaryColor }} />
               </button>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   if (confirm(`删除 "${folder.name}"？`)) onDeleteFolder(folder.id);
                 }}
-                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 transition-all"
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/20 transition-all"
                 title="删除"
               >
-                <FiTrash2 size={11} className="text-red-400" />
+                <FiTrash2 size={10} className="text-red-400" />
               </button>
             </>
           )}
         </div>
-        {hasChildren && isExpanded && folder.children!.map(child => renderFolder(child, depth + 1))}
+        
+        {/* 拖拽指示器 - 下方 */}
+        {isDragOver && dragOverPosition === 'after' && (
+          <div 
+            className="absolute left-0 right-0 h-0.5 z-10"
+            style={{ 
+              bottom: 0,
+              marginLeft: `${depth * 12}px`,
+              background: primaryColor,
+            }}
+          />
+        )}
+        
+        {hasChildren && isExpanded && folder.children!.map(child => renderFolder(child, depth + 1, folder.id))}
       </div>
     );
   };
@@ -560,177 +585,109 @@ export const Sidebar = memo(function Sidebar({
         </div>
       )}
 
-      {/* 快捷导航 */}
-      <div className="px-2 py-2 border-b border-white/5">
-        <button
-          onClick={() => { onFolderSelect(null); onFilterByFormat?.(null); }}
-          className="w-full flex items-center gap-2 px-2 py-2 rounded-lg transition-all"
-          style={{
-            background: !selectedFolder && !selectedFormat ? `${primaryColor}15` : 'transparent',
-          }}
-        >
-          <FiHome size={14} style={{ color: !selectedFolder && !selectedFormat ? primaryColor : '#666' }} />
-          <span 
-            className="text-sm"
-            style={{ color: !selectedFolder && !selectedFormat ? primaryColor : '#aaa' }}
-          >
-            全部文件
-          </span>
-        </button>
-        <button
-          onClick={onScanClick}
-          className="w-full flex items-center gap-2 px-2 py-2 mt-1 rounded-lg transition-all"
-          style={{ 
-            background: `${primaryColor}10`,
-            border: `1px solid ${primaryColor}30`,
-          }}
-        >
-          <FiHardDrive size={14} style={{ color: primaryColor }} />
-          <span className="text-sm" style={{ color: primaryColor }}>扫描文件夹</span>
-        </button>
-      </div>
-
-      {/* 滚动区域 */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {/* 文件类型 */}
-        <Section id="types" title="类型" icon={FiFilter}>
-          <div className="px-1 space-y-0.5">
-            {Object.entries(FILE_CATEGORIES).map(([key, cat]) => {
-              const Icon = cat.icon;
-              const allExts = getCategoryExts(cat);
-              const isExpanded = expandedCategories.has(key);
-              const isCatSelected = isCategorySelected(cat);
-              const hasSelectedFormat = cat.formats.some(f => isFormatSelected(f.ext));
-              
-              return (
-                <div key={key}>
-                  {/* 主分类 */}
-                  <div className="flex items-center gap-1">
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onMouseDown={() => toggleCategory(key)}
-                      className="p-1.5 rounded hover:bg-white/10 active:bg-white/20 cursor-pointer select-none"
-                    >
-                      {isExpanded ? 
-                        <FiChevronDown size={12} style={{ color: cat.color }} /> : 
-                        <FiChevronRight size={12} className="text-gray-500" />
-                      }
-                    </div>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onMouseDown={() => handleCategoryClick(allExts)}
-                      className="flex-1 flex items-center gap-2 px-2 py-2 rounded-md transition-colors text-left cursor-pointer hover:bg-white/10 active:bg-white/20 select-none"
-                      style={{
-                        background: isCatSelected ? `${cat.color}20` : 'transparent',
-                      }}
-                    >
-                      <Icon size={13} style={{ color: cat.color }} />
-                      <span 
-                        className="text-sm flex-1"
-                        style={{ color: isCatSelected || hasSelectedFormat ? cat.color : '#999' }}
-                      >
-                        {cat.name}
-                      </span>
-                      <span className="text-[10px] text-gray-600">
-                        {cat.formats.length}
-                      </span>
-                    </div>
-                    {(isCatSelected || hasSelectedFormat) && (
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        onMouseDown={() => onFilterByFormat?.(null)}
-                        className="p-1.5 rounded hover:bg-white/10 active:bg-white/20 cursor-pointer select-none"
-                      >
-                        <FiX size={12} style={{ color: cat.color }} />
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* 格式分支 */}
-                  {isExpanded && (
-                    <div className="ml-5 mt-1 space-y-1 border-l border-white/5 pl-2">
-                      {cat.formats.map(format => {
-                        const isSelected = isFormatSelected(format.ext);
-                        return (
-                          <div
-                            key={format.ext}
-                            role="button"
-                            tabIndex={0}
-                            onMouseDown={() => onFilterByFormat?.(isSelected ? null : format.ext)}
-                            className="w-full flex items-center gap-2 px-2 py-2 rounded text-left transition-colors cursor-pointer hover:bg-white/10 active:bg-white/20 select-none"
-                            style={{
-                              background: isSelected ? `${cat.color}20` : 'transparent',
-                            }}
-                          >
-                            <span 
-                              className="text-xs font-medium min-w-[40px]"
-                              style={{ color: isSelected ? cat.color : '#888' }}
-                            >
-                              {format.name}
-                            </span>
-                            <span className="text-[10px] text-gray-600 truncate flex-1">
-                              {format.desc}
-                            </span>
-                            {isSelected && (
-                              <FiX size={10} style={{ color: cat.color }} />
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Section>
-
-        {/* 文件夹 */}
-        <Section 
-          id="folders" 
-          title="文件夹" 
-          icon={FiFolder}
-          action={
+      {/* 快捷导航 - 固定区域 */}
+      <div className="px-2 py-2 border-b border-white/5 flex-shrink-0">
+        {/* 全部文件 + 展开/折叠 + 新建文件夹按钮 */}
+        <div>
+          <div className="flex items-center">
             <button
-              onClick={(e) => { e.stopPropagation(); setShowNewFolder(!showNewFolder); }}
-              className="p-1 rounded hover:bg-white/10"
+              onClick={() => setExpandedAllFiles(!expandedAllFiles)}
+              className="p-0.5 rounded hover:bg-white/10 transition-all mr-1"
+              title={expandedAllFiles ? '折叠文件夹' : '展开文件夹'}
             >
-              <FiPlus size={12} style={{ color: primaryColor }} />
+              {expandedAllFiles ? 
+                <FiChevronDown size={12} style={{ color: primaryColor }} /> : 
+                <FiChevronRight size={12} className="text-gray-500" />
+              }
             </button>
-          }
-        >
-          {showNewFolder && (
-            <div className="mx-2 mb-2 flex gap-1">
+            <button
+              onClick={() => { onFolderSelect(null); onFilterByFormat?.(null); }}
+              className="flex-1 flex items-center gap-2 px-2 py-2 rounded-lg transition-all"
+              style={{
+                background: !selectedFolder && !selectedFormat ? `${primaryColor}15` : 'transparent',
+              }}
+            >
+              <FiHome size={14} style={{ color: !selectedFolder && !selectedFormat ? primaryColor : '#666' }} />
+              <span 
+                className="text-sm"
+                style={{ color: !selectedFolder && !selectedFormat ? primaryColor : '#aaa' }}
+              >
+                全部文件
+              </span>
+            </button>
+            <button
+              onClick={() => setShowNewFolder(!showNewFolder)}
+              className="p-1.5 rounded hover:bg-white/10 transition-all"
+              title="新建文件夹"
+            >
+              <FiPlus size={14} style={{ color: primaryColor }} />
+            </button>
+          </div>
+          
+          {/* 文件夹子列表 - 显示在"全部文件"下面，只显示顶级文件夹 */}
+          {expandedAllFiles && folders.length > 0 && (
+            <div className="ml-6 mt-1 space-y-0.5">
+              {folders
+                .filter(folder => !folder.parentId) // 只显示顶级文件夹（没有parentId的）
+                .map(folder => renderFolder(folder, 0))}
+            </div>
+          )}
+          
+          {/* 新建文件夹输入框 - 在文件夹列表下方 */}
+          {expandedAllFiles && showNewFolder && (
+            <div className="ml-6 mt-1 flex gap-1 px-2 py-1.5">
               <input
                 type="text"
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreateFolder();
+                  if (e.key === 'Escape') { setShowNewFolder(false); setNewFolderName(''); }
+                }}
                 placeholder="文件夹名称"
-                className="flex-1 px-2 py-1.5 bg-black/40 border border-white/10 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
+                className="flex-1 px-2 py-1 bg-black/40 border border-white/10 rounded text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
                 autoFocus
               />
               <button
                 onClick={handleCreateFolder}
-                className="px-2 rounded"
+                className="px-1.5 rounded"
                 style={{ background: primaryColor, color: '#000' }}
               >
-                <FiPlus size={14} />
+                <FiPlus size={12} />
+              </button>
+              <button
+                onClick={() => { setShowNewFolder(false); setNewFolderName(''); }}
+                className="px-1.5 rounded bg-gray-600 text-white"
+              >
+                <FiX size={12} />
               </button>
             </div>
           )}
-          {folders.length === 0 ? (
-            <div className="px-3 py-4 text-xs text-gray-500 text-center">
-              暂无文件夹
-            </div>
-          ) : (
-            folders.map(folder => renderFolder(folder))
-          )}
-        </Section>
+        </div>
+        
+        {/* 扫描导入 */}
+        <button
+          onClick={onScanClick}
+          className="w-full flex items-center gap-2 px-2 py-2 mt-2 rounded-lg transition-all hover:bg-white/5"
+        >
+          <FiHardDrive size={14} className="text-gray-400" />
+          <span className="text-sm text-gray-400">扫描导入</span>
+        </button>
+      </div>
 
+      {/* 滚动区域 - 包含标签 */}
+      <div 
+        className="flex-1 overflow-y-auto sidebar-scroll min-h-0"
+        style={{
+          '--scrollbar-primary-40': scrollbarPrimary40,
+          '--scrollbar-secondary-40': scrollbarSecondary40,
+          '--scrollbar-primary-60': scrollbarPrimary60,
+          '--scrollbar-secondary-60': scrollbarSecondary60,
+          '--scrollbar-primary-80': scrollbarPrimary80,
+          '--scrollbar-secondary-80': scrollbarSecondary80,
+          '--scrollbar-primary': primaryColor,
+        } as React.CSSProperties & Record<string, string>}
+      >
         {/* 标签 */}
         <Section 
           id="tags" 

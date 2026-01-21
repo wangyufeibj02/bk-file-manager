@@ -64,7 +64,16 @@ export function AdminUserPanel({ isOpen, onClose, apiBaseUrl }: AdminUserPanelPr
       const res = await fetch(`${apiBaseUrl}/auth/users`);
       if (!res.ok) throw new Error('Failed to load users');
       const data = await res.json();
-      setUsers(data);
+      // 转换字段：后端用 isActive，前端用 isDisabled
+      const mappedUsers = data.map((u: any) => ({
+        id: u.id,
+        username: u.username,
+        role: u.role,
+        isDisabled: !u.isActive,
+        createdAt: u.createdAt,
+        lastLogin: u.lastLoginAt,
+      }));
+      setUsers(mappedUsers);
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载用户列表失败');
     } finally {
@@ -81,14 +90,14 @@ export function AdminUserPanel({ isOpen, onClose, apiBaseUrl }: AdminUserPanelPr
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${apiBaseUrl}/auth/register`, {
+      const res = await fetch(`${apiBaseUrl}/auth/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: newUsername,
           password: newPassword,
           role: newRole,
-          permissions: newPermissions,
+          displayName: newUsername,
         }),
       });
 
@@ -111,10 +120,17 @@ export function AdminUserPanel({ isOpen, onClose, apiBaseUrl }: AdminUserPanelPr
     setLoading(true);
     setError(null);
     try {
+      // 转换字段：前端用 isDisabled，后端用 isActive
+      const apiUpdates: Record<string, any> = { ...updates };
+      if ('isDisabled' in apiUpdates) {
+        apiUpdates.isActive = !apiUpdates.isDisabled;
+        delete apiUpdates.isDisabled;
+      }
+      
       const res = await fetch(`${apiBaseUrl}/auth/users/${userId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
+        body: JSON.stringify(apiUpdates),
       });
 
       if (!res.ok) throw new Error('更新用户失败');

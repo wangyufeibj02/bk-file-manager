@@ -40,11 +40,16 @@ const formatSize = (bytes: number) => {
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
 };
 
+// 视频和音频扩展名列表
+const videoExtensions = ['mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv', 'webm', 'm4v', 'mpg', 'mpeg', '3gp', 'ts', 'mts'];
+const audioExtensions = ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'wma', 'aiff'];
+
 // 获取文件图标
-const getFileIcon = (mimeType: string) => {
+const getFileIcon = (mimeType: string, fileName: string = '') => {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
   if (mimeType.startsWith('image/')) return FiImage;
-  if (mimeType.startsWith('video/')) return FiVideo;
-  if (mimeType.startsWith('audio/')) return FiMusic;
+  if (mimeType.startsWith('video/') || videoExtensions.includes(ext)) return FiVideo;
+  if (mimeType.startsWith('audio/') || audioExtensions.includes(ext)) return FiMusic;
   if (mimeType.includes('text') || mimeType.includes('document') || mimeType.includes('pdf')) return FiFileText;
   return FiFile;
 };
@@ -214,7 +219,7 @@ export function TrashGrid({
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
             {items.map(item => {
-              const FileIcon = getFileIcon(item.mimeType);
+              const FileIcon = getFileIcon(item.mimeType, item.originalName);
               const isSelected = selectedItems.has(item.id);
               
               return (

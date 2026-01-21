@@ -45,6 +45,18 @@ npm run dev
 前端访问: http://localhost:3000
 后端 API: http://localhost:3001
 
+## 🌐 部署到公网
+
+想让所有人都能访问你的应用？查看 [部署指南.md](./部署指南.md) 了解详细步骤。
+
+**快速部署选项：**
+- ⭐ **Vercel** - 最简单，支持全栈应用
+- ⭐ **Railway** - 适合需要数据库的应用
+- **Netlify** - 免费全栈托管
+- **Render** - 简单易用的部署平台
+
+部署完成后，你会得到一个公开链接，例如：`https://your-app.vercel.app`
+
 ## 📖 API 接口
 
 ### 文件夹 API
